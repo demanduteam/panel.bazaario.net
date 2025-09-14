@@ -69,6 +69,20 @@
                             </button>
                         </div>
                     </form>
+
+                    <div class="relative flex items-center py-2">
+                        <div class="flex-grow border-t border-gray-300 dark:border-gray-600"></div>
+                        <span class="flex-shrink px-4 text-xs text-gray-500 uppercase dark:text-gray-400">یا</span>
+                        <div class="flex-grow border-t border-gray-300 dark:border-gray-600"></div>
+                    </div>
+
+                    <div>
+                         <button id="google-login-button" type="button" class="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700">
+                            <svg class="w-5 h-5 mr-2" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 512 244 512 111.8 512 0 398.2 0 256S111.8 0 244 0c69.8 0 130.8 28.2 174.2 73.4l-67.4 64.8C334.3 112.5 292.5 95.3 244 95.3c-74.8 0-136.2 61.4-136.2 137.2s61.4 137.2 136.2 137.2c79.2 0 119.2-56.1 123.4-86.4H244v-76.8h241.2c2.6 13 4.8 26.5 4.8 41.2z"></path></svg>
+                            <span>ورود با گوگل</span>
+                        </button>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -103,6 +117,38 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Update Password Page (Initially Hidden) -->
+        <div id="update-password-page" class="hidden">
+            <div class="flex items-center justify-center min-h-screen p-4">
+                <div class="w-full max-w-sm p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
+                    <div class="text-center">
+                        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">تنظیم رمز عبور جدید</h1>
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">رمز عبور جدید خود را وارد کنید.</p>
+                    </div>
+                    <form id="update-password-form" class="space-y-6">
+                        <div>
+                            <label for="new-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">رمز عبور جدید</label>
+                            <input id="new-password" type="password" required class="w-full px-3 py-2 mt-1 text-gray-900 bg-gray-100 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                        <div>
+                            <label for="confirm-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">تکرار رمز عبور جدید</label>
+                            <input id="confirm-password" type="password" required class="w-full px-3 py-2 mt-1 text-gray-900 bg-gray-100 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                        <div id="update-success-message" class="text-sm text-center text-green-500 h-5"></div>
+                        <div id="update-error-message" class="text-sm text-center text-red-500 h-5"></div>
+                        <div>
+                            <button id="update-password-button" type="submit" class="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <span id="update-button-text">به‌روزرسانی رمز عبور</span>
+                            </button>
+                        </div>
+                    </form>
+                    <div class="text-sm text-center">
+                        <a href="#" id="update-back-to-login-link" class="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">بازگشت به صفحه ورود</a>
+                    </div>
+                </div>
+            </div>
+        </div>
 
 
         <!-- Dashboard Page Container (Initially Hidden) -->
@@ -127,7 +173,7 @@
                 <div class="max-w-md mx-auto mb-8">
                     <div class="relative">
                         <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                            <svg xmlns="http://www.w.3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                         </div>
                         <input id="search-input" type="text" placeholder="جستجوی کامپوننت..." class="w-full px-4 py-2 pr-10 text-gray-900 bg-white border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white" />
                     </div>
@@ -148,7 +194,7 @@
         // SUPABASE CONFIGURATION
         // ===================================
         const SUPABASE_URL = 'https://wehyjatotbzxargnxasg.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZD5M7MJNv7n1qmIDHQBNFiY';
 
         const { createClient } = supabase;
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -182,6 +228,7 @@
         // ===================================
         const loginPage = document.getElementById('login-page');
         const resetPasswordPage = document.getElementById('reset-password-page');
+        const updatePasswordPage = document.getElementById('update-password-page');
         const dashboardPage = document.getElementById('dashboard-page');
         
         const loginForm = document.getElementById('login-form');
@@ -190,6 +237,7 @@
         const errorMessageDiv = document.getElementById('error-message');
         const loginButton = document.getElementById('login-button');
         const loginButtonText = document.getElementById('login-button-text');
+        const googleLoginButton = document.getElementById('google-login-button');
         
         const resetPasswordForm = document.getElementById('reset-password-form');
         const resetEmailInput = document.getElementById('reset-email');
@@ -198,8 +246,17 @@
         const resetButton = document.getElementById('reset-button');
         const resetButtonText = document.getElementById('reset-button-text');
 
+        const updatePasswordForm = document.getElementById('update-password-form');
+        const newPasswordInput = document.getElementById('new-password');
+        const confirmPasswordInput = document.getElementById('confirm-password');
+        const updateSuccessMessageDiv = document.getElementById('update-success-message');
+        const updateErrorMessageDiv = document.getElementById('update-error-message');
+        const updatePasswordButton = document.getElementById('update-password-button');
+        const updateButtonText = document.getElementById('update-button-text');
+
         const forgotPasswordLink = document.getElementById('forgot-password-link');
         const backToLoginLink = document.getElementById('back-to-login-link');
+        const updateBackToLoginLink = document.getElementById('update-back-to-login-link');
         
         const logoutButton = document.getElementById('logout-button');
         const themeToggleButton = document.getElementById('theme-toggle');
@@ -211,21 +268,36 @@
         // ===================================
         // UI & RENDERING LOGIC
         // ===================================
+        const cleanReload = () => {
+            const baseUrl = window.location.origin + window.location.pathname;
+            window.location.href = baseUrl;
+        };
+
         function showLoginPage() {
             dashboardPage.classList.add('hidden');
             resetPasswordPage.classList.add('hidden');
+            updatePasswordPage.classList.add('hidden');
             loginPage.classList.remove('hidden');
         }
 
         function showResetPasswordPage() {
             loginPage.classList.add('hidden');
             dashboardPage.classList.add('hidden');
+            updatePasswordPage.classList.add('hidden');
             resetPasswordPage.classList.remove('hidden');
+        }
+        
+        function showUpdatePasswordPage() {
+            loginPage.classList.add('hidden');
+            dashboardPage.classList.add('hidden');
+            resetPasswordPage.classList.add('hidden');
+            updatePasswordPage.classList.remove('hidden');
         }
         
         function showDashboardPage(user) {
             loginPage.classList.add('hidden');
             resetPasswordPage.classList.add('hidden');
+            updatePasswordPage.classList.add('hidden');
             dashboardPage.classList.remove('hidden');
             userEmailSpan.textContent = user.email;
             renderComponentCards(components);
@@ -308,6 +380,19 @@
             loginButtonText.textContent = 'ورود';
         });
 
+        googleLoginButton.addEventListener('click', async () => {
+            errorMessageDiv.textContent = '';
+            const { error } = await supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: 'https://panel.bazaario.net/',
+                },
+            });
+            if (error) {
+                errorMessageDiv.textContent = 'خطا در ورود با گوگل. لطفا دوباره تلاش کنید.';
+            }
+        });
+
         resetPasswordForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             resetButton.disabled = true;
@@ -317,7 +402,7 @@
 
             const email = resetEmailInput.value;
             const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-                redirectTo: 'https://panel.bazaario.net/', // Using your specific site URL
+                redirectTo: 'https://panel.bazaario.net/',
             });
 
             if (error) {
@@ -330,6 +415,48 @@
             resetButtonText.textContent = 'ارسال لینک بازیابی';
         });
 
+        updatePasswordForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            updatePasswordButton.disabled = true;
+            updateButtonText.innerHTML = '<div class="spinner"></div>';
+            updateSuccessMessageDiv.textContent = '';
+            updateErrorMessageDiv.textContent = '';
+
+            const newPassword = newPasswordInput.value;
+            const confirmPassword = confirmPasswordInput.value;
+
+            if (newPassword.length < 6) {
+                updateErrorMessageDiv.textContent = 'رمز عبور باید حداقل ۶ کاراکتر باشد.';
+                updatePasswordButton.disabled = false;
+                updateButtonText.textContent = 'به‌روزرسانی رمز عبور';
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                updateErrorMessageDiv.textContent = 'رمزهای عبور با یکدیگر مطابقت ندارند.';
+                updatePasswordButton.disabled = false;
+                updateButtonText.textContent = 'به‌روزرسانی رمز عبور';
+                return;
+            }
+
+            const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+
+            if (error) {
+                updateErrorMessageDiv.textContent = 'خطا در به‌روزرسانی رمز عبور. لطفا دوباره تلاش کنید.';
+            } else {
+                updateSuccessMessageDiv.textContent = 'رمز عبور با موفقیت به‌روزرسانی شد. در حال انتقال به صفحه ورود...';
+                setTimeout(() => {
+                    cleanReload();
+                }, 3000);
+            }
+            
+            if (error) { // Only re-enable if there was an error
+               updatePasswordButton.disabled = false;
+               updateButtonText.textContent = 'به‌روزرسانی رمز عبور';
+            }
+        });
+
+
         forgotPasswordLink.addEventListener('click', (e) => {
             e.preventDefault();
             showResetPasswordPage();
@@ -337,12 +464,17 @@
 
         backToLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
-            showLoginPage();
+            cleanReload();
+        });
+        
+        updateBackToLoginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            cleanReload();
         });
 
         logoutButton.addEventListener('click', async () => {
             await supabaseClient.auth.signOut();
-            showLoginPage();
+            // The onAuthStateChange event ('SIGNED_OUT') will handle the redirect.
         });
         
         searchInput.addEventListener('input', (e) => {
@@ -362,33 +494,38 @@
         async function initializeApp() {
             applyTheme(currentTheme);
             
-            supabaseClient.auth.onAuthStateChange((event, session) => {
-                if (event === 'PASSWORD_RECOVERY') {
-                    // This event is triggered when the user clicks the link in the email.
-                    // You could show a specific "update password" form here if you wanted,
-                    // but for now, we just stay on the page. Supabase handles the token.
-                    // When they successfully update their password on the Supabase page,
-                    // they will be redirected back here.
+            supabaseClient.auth.onAuthStateChange(async (event, session) => {
+                if (event === 'SIGNED_IN') {
+                    if(session?.user) {
+                        const { data: profile } = await supabaseClient
+                            .from('profiles')
+                            .select('roleid')
+                            .eq('id', session.user.id)
+                            .single();
+                        
+                        if (profile && profile.roleid === 1) {
+                            showDashboardPage(session.user);
+                        } else {
+                            showLoginPage(); 
+                            errorMessageDiv.textContent = 'شما دسترسی ادمین برای ورود به این پنل را ندارید.';
+                            await supabaseClient.auth.signOut();
+                        }
+                    }
+                } else if (event === "SIGNED_OUT") {
+                    cleanReload();
+                } else if (event === 'PASSWORD_RECOVERY') {
+                    showUpdatePasswordPage();
                 }
             });
             
-            const { data: { session } } = await supabaseClient.auth.getSession();
-
-            if (session?.user) {
-                const { data: profile } = await supabaseClient
-                    .from('profiles')
-                    .select('roleid')
-                    .eq('id', session.user.id)
-                    .single();
-
-                if (profile && profile.roleid === 1) {
-                    showDashboardPage(session.user);
-                } else {
-                    await supabaseClient.auth.signOut();
+            const hash = window.location.hash;
+            if (hash.includes('type=recovery') && hash.includes('access_token')) {
+                showUpdatePasswordPage();
+            } else {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (!session?.user) {
                     showLoginPage();
                 }
-            } else {
-                showLoginPage();
             }
         }
 
@@ -396,5 +533,4 @@
     </script>
 </body>
 </html>
-
 
