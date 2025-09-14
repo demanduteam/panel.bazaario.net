@@ -268,11 +268,6 @@
         // ===================================
         // UI & RENDERING LOGIC
         // ===================================
-        const cleanReload = () => {
-            const baseUrl = window.location.origin + window.location.pathname;
-            window.location.href = baseUrl;
-        };
-
         function showLoginPage() {
             dashboardPage.classList.add('hidden');
             resetPasswordPage.classList.add('hidden');
@@ -446,7 +441,8 @@
             } else {
                 updateSuccessMessageDiv.textContent = 'رمز عبور با موفقیت به‌روزرسانی شد. در حال انتقال به صفحه ورود...';
                 setTimeout(() => {
-                    cleanReload();
+                    window.location.hash = ''; // Clear the hash before navigating
+                    showLoginPage();
                 }, 3000);
             }
             
@@ -464,17 +460,18 @@
 
         backToLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
-            cleanReload();
+            showLoginPage();
         });
         
         updateBackToLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
-            cleanReload();
+            window.location.hash = ''; // Clear the hash to prevent re-triggering recovery mode
+            showLoginPage();
         });
 
         logoutButton.addEventListener('click', async () => {
             await supabaseClient.auth.signOut();
-            // The onAuthStateChange event ('SIGNED_OUT') will handle the redirect.
+            showLoginPage();
         });
         
         searchInput.addEventListener('input', (e) => {
@@ -506,18 +503,21 @@
                         if (profile && profile.roleid === 1) {
                             showDashboardPage(session.user);
                         } else {
-                            showLoginPage(); 
+                            // User is signed in but is not an admin. Show an error and sign them out.
+                            showLoginPage(); // Show the login page first
                             errorMessageDiv.textContent = 'شما دسترسی ادمین برای ورود به این پنل را ندارید.';
                             await supabaseClient.auth.signOut();
                         }
                     }
                 } else if (event === "SIGNED_OUT") {
-                    cleanReload();
+                    window.location.hash = '';
+                    showLoginPage();
                 } else if (event === 'PASSWORD_RECOVERY') {
                     showUpdatePasswordPage();
                 }
             });
             
+            // Logic for initial page load
             const hash = window.location.hash;
             if (hash.includes('type=recovery') && hash.includes('access_token')) {
                 showUpdatePasswordPage();
@@ -526,6 +526,8 @@
                 if (!session?.user) {
                     showLoginPage();
                 }
+                // If there IS a session, the onAuthStateChange('SIGNED_IN') event will fire automatically
+                // and handle routing the user to the dashboard or logging them out.
             }
         }
 
