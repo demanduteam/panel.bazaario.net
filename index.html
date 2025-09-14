@@ -35,8 +35,14 @@
                     <h1 class="text-3xl font-bold text-gray-900 dark:text-white">به بازاریو خوش آمدید</h1>
                     <p class="mt-2 text-md text-gray-600 dark:text-gray-400">برای ادامه، با حساب گوگل خود وارد شوید.</p>
                 </div>
-                <div id="error-container" class="hidden p-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm">
-                    <p id="error-text">یک خطای غیرمنتظره رخ داد. لطفاً دوباره تلاش کنید.</p>
+                <!-- Status Messages Container -->
+                <div id="status-container">
+                    <div id="error-container" class="hidden p-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                        <p id="error-text">یک خطای غیرمنتظره رخ داد. لطفاً دوباره تلاش کنید.</p>
+                    </div>
+                     <div id="loading-container" class="hidden p-3 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg text-sm">
+                        <p>در حال بررسی دسترسی...</p>
+                    </div>
                 </div>
                 <div class="pt-4">
                     <button id="google-signin-btn" class="w-full flex items-center justify-center gap-3 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 transition-all duration-300">
@@ -47,7 +53,7 @@
             </div>
         </div>
 
-        <!-- Dashboard View: Shown when user is logged in -->
+        <!-- Dashboard View: Shown when user is logged in and is an admin -->
         <div id="dashboard-view" class="hidden w-full max-w-sm">
             <div class="p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
                 <!-- User Info Header -->
@@ -100,17 +106,31 @@
         const logoutBtn = document.getElementById('logout-btn');
         const errorContainer = document.getElementById('error-container');
         const errorText = document.getElementById('error-text');
+        const loadingContainer = document.getElementById('loading-container');
         const userAvatar = document.getElementById('user-avatar');
         const userEmail = document.getElementById('user-email');
 
+        // Function to show a message (error or loading)
+        const showMessage = (type, message) => {
+            errorContainer.classList.add('hidden');
+            loadingContainer.classList.add('hidden');
+
+            if (type === 'error') {
+                errorText.textContent = message;
+                errorContainer.classList.remove('hidden');
+            } else if (type === 'loading') {
+                loadingContainer.classList.remove('hidden');
+            }
+        };
+
         // Function to handle Google Sign In
         const handleGoogleLogin = async () => {
+            showMessage(null); // Clear previous messages
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
             });
             if (error) {
-                errorText.textContent = `خطا در ورود: ${error.message}`;
-                errorContainer.classList.remove('hidden');
+                showMessage('error', `خطا در ورود: ${error.message}`);
             }
         };
 
@@ -119,20 +139,39 @@
             await supabaseClient.auth.signOut();
         };
 
-        // UI Update function
-        const updateUserUI = (user) => {
+        // UI Update function with role check
+        const updateUserUI = async (user) => {
             if (user) {
-                // User is logged in
-                loginView.classList.add('hidden');
-                dashboardView.classList.remove('hidden');
+                // User is logged in, now check for admin role
+                showMessage('loading');
+                loginView.classList.remove('hidden'); // Keep login view until role is confirmed
+                dashboardView.classList.add('hidden');
 
-                // Update user details
-                userEmail.textContent = user.email;
-                if (user.user_metadata?.avatar_url) {
-                    userAvatar.src = user.user_metadata.avatar_url;
+                const { data: profile, error } = await supabaseClient
+                    .from('profiles')
+                    .select('roleid')
+                    .eq('id', user.id)
+                    .single();
+
+                if (profile && profile.roleid === 1) {
+                    // User is an admin, show dashboard
+                    showMessage(null); // Hide loading message
+                    loginView.classList.add('hidden');
+                    dashboardView.classList.remove('hidden');
+                    userEmail.textContent = user.email;
+                    if (user.user_metadata?.avatar_url) {
+                        userAvatar.src = user.user_metadata.avatar_url;
+                    }
+                } else {
+                    // User is not an admin or profile not found
+                    await supabaseClient.auth.signOut(); // Force sign out for security
+                    showMessage('error', 'شما دسترسی لازم برای ورود به این پنل را ندارید. لطفاً با پشتیبانی بازاریو تماس بگیرید: 09036712820');
+                    loginView.classList.remove('hidden');
+                    dashboardView.classList.add('hidden');
                 }
             } else {
                 // User is logged out
+                showMessage(null); // Clear any messages
                 dashboardView.classList.add('hidden');
                 loginView.classList.remove('hidden');
             }
@@ -143,14 +182,14 @@
         logoutBtn.addEventListener('click', handleLogout);
 
         // Listen for authentication state changes
-        supabaseClient.auth.onAuthStateChange((event, session) => {
-            updateUserUI(session?.user);
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            await updateUserUI(session?.user);
         });
 
         // Initial check on page load
         const checkInitialSession = async () => {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            updateUserUI(session?.user);
+            await updateUserUI(session?.user);
         };
         
         checkInitialSession();
