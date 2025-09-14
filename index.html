@@ -58,87 +58,32 @@
             </div>
         </div>
 
-        <!-- Dashboard View: Full-page layout for logged-in admins -->
-        <div id="dashboard-view" class="hidden">
-            <div class="flex h-screen bg-gray-100 dark:bg-gray-900">
-                <!-- Sidebar -->
-                <aside class="w-64 flex-shrink-0 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
-                    <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
-                        <img id="user-avatar" src="https://placehold.co/48x48/7c3aed/ffffff?text=U" alt="Avatar" class="w-12 h-12 rounded-full border-2 border-indigo-500">
-                        <div>
-                             <p class="font-bold text-md text-gray-900 dark:text-white">خوش آمدید</p>
-                             <p id="user-email" class="text-xs text-gray-600 dark:text-gray-400 break-all">user@example.com</p>
+        <!-- Dashboard View: Simple button hub for logged-in admins -->
+        <div id="dashboard-view" class="hidden min-h-screen flex flex-col items-center justify-center p-4">
+            <div class="w-full max-w-md">
+                 <div class="p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
+                    <!-- User Info Header -->
+                    <div class="flex items-center justify-between gap-4 border-b dark:border-gray-700 pb-4">
+                        <div class="flex items-center gap-4">
+                            <img id="user-avatar" src="https://placehold.co/48x48/7c3aed/ffffff?text=U" alt="Avatar" class="w-12 h-12 rounded-full border-2 border-indigo-500">
+                            <div>
+                                <p class="font-bold text-md text-gray-900 dark:text-white">خوش آمدید</p>
+                                <p id="user-email" class="text-xs text-gray-600 dark:text-gray-400 break-all">user@example.com</p>
+                            </div>
                         </div>
+                        <button id="logout-btn" class="flex-shrink-0 py-2 px-4 font-semibold rounded-lg text-white bg-red-600 hover:bg-red-700">خروج</button>
                     </div>
-                    <nav id="sidebar-nav" class="flex-grow p-4 space-y-2">
-                         <a href="#" data-page="home" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                            <span>داشبورد اصلی</span>
-                         </a>
-                         <a href="#" data-page="users" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-6-6h6a6 6 0 006 6"></path></svg>
-                            <span>مدیریت کاربران</span>
-                         </a>
-                         <a href="#" data-page="products" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-                            <span>مدیریت محصولات</span>
-                         </a>
-                         <a href="#" data-page="inventory" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
-                            <span>مدیریت موجودی</span>
-                         </a>
-                         <a href="#" data-page="demands" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
-                            <span>مدیریت تقاضاها</span>
-                         </a>
-                         <a href="#" data-page="supply" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8a1 1 0 001-1z"></path></svg>
-                            <span>مدیریت تامین</span>
-                         </a>
-                         <a href="#" data-page="invoices" class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            <span>مدیریت فاکتورها</span>
-                         </a>
-                    </nav>
-                    <div class="p-4 border-t dark:border-gray-700">
-                         <button id="logout-btn" class="w-full flex items-center justify-center gap-2 py-2 px-4 font-semibold rounded-lg text-white bg-red-600 hover:bg-red-700">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                            <span>خروج</span>
-                         </button>
-                    </div>
-                </aside>
 
-                <!-- Main Content -->
-                <main class="flex-1 p-6 sm:p-10 overflow-y-auto">
-                    <div id="page-home" class="page-content">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">به پنل مدیریت خوش آمدید</h1>
-                        <p class="mt-2 text-gray-600 dark:text-gray-400">از منوی سمت راست برای مدیریت بخش‌های مختلف استفاده کنید.</p>
+                    <!-- Navigation Buttons -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <a href="#" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت کاربران</a>
+                        <a href="https://demanduteam.github.io/bazaario-product-management/" target="_blank" rel="noopener noreferrer" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت محصولات</a>
+                        <a href="#" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت موجودی</a>
+                        <a href="#" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت تقاضاها</a>
+                        <a href="#" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت تامین</a>
+                        <a href="#" class="text-center font-semibold p-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">مدیریت فاکتورها</a>
                     </div>
-                    <div id="page-users" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت کاربران</h1>
-                        <!-- Content for user management goes here -->
-                    </div>
-                     <div id="page-products" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت محصولات</h1>
-                        <!-- Content for product management goes here -->
-                    </div>
-                     <div id="page-inventory" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت موجودی انبارها</h1>
-                        <!-- Content for inventory management goes here -->
-                    </div>
-                    <div id="page-demands" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت تقاضاها</h1>
-                        <!-- Content for demand management goes here -->
-                    </div>
-                    <div id="page-supply" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت تامین</h1>
-                        <!-- Content for supply management goes here -->
-                    </div>
-                    <div id="page-invoices" class="page-content hidden">
-                        <h1 class="text-3xl font-bold text-gray-800 dark:text-white">مدیریت فاکتورها</h1>
-                        <!-- Content for invoice management goes here -->
-                    </div>
-                </main>
+                </div>
             </div>
         </div>
     </main>
@@ -148,7 +93,7 @@
 
         // Use credentials from the admin panel context
         const SUPABASE_URL = 'https://wehyjatotbzxargnxasg.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZD5M7MJNv7n1qmIDHQBNFiY';
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // DOM Elements
@@ -161,8 +106,6 @@
         const loadingContainer = document.getElementById('loading-container');
         const userAvatar = document.getElementById('user-avatar');
         const userEmail = document.getElementById('user-email');
-        const sidebarNav = document.getElementById('sidebar-nav');
-        const pageContents = document.querySelectorAll('.page-content');
 
         // Function to show a message (error or loading)
         const showMessage = (type, message) => {
@@ -175,24 +118,6 @@
             } else if (type === 'loading') {
                 loadingContainer.classList.remove('hidden');
             }
-        };
-
-        const navigateToPage = (pageId) => {
-            pageContents.forEach(page => page.classList.add('hidden'));
-            const targetPage = document.getElementById(`page-${pageId}`);
-            if (targetPage) {
-                targetPage.classList.remove('hidden');
-            }
-
-            const navLinks = sidebarNav.querySelectorAll('a');
-            navLinks.forEach(link => {
-                link.classList.remove('bg-indigo-600', 'text-white');
-                link.classList.add('text-gray-600', 'dark:text-gray-300', 'hover:bg-gray-200', 'dark:hover:bg-gray-700');
-                if (link.dataset.page === pageId) {
-                    link.classList.add('bg-indigo-600', 'text-white');
-                    link.classList.remove('text-gray-600', 'dark:text-gray-300', 'hover:bg-gray-200', 'dark:hover:bg-gray-700');
-                }
-            });
         };
 
         const handleGoogleLogin = async () => {
@@ -220,7 +145,6 @@
                     dashboardView.classList.remove('hidden');
                     userEmail.textContent = user.email;
                     if (user.user_metadata?.avatar_url) userAvatar.src = user.user_metadata.avatar_url;
-                    navigateToPage('home');
                 } else {
                     await supabaseClient.auth.signOut();
                     showMessage('error', 'شما دسترسی لازم برای ورود به این پنل را ندارید. لطفاً با پشتیبانی بازاریو تماس بگیرید: 09036712820');
@@ -237,13 +161,6 @@
         // Event Listeners
         googleSignInBtn.addEventListener('click', handleGoogleLogin);
         logoutBtn.addEventListener('click', handleLogout);
-        sidebarNav.addEventListener('click', (e) => {
-            const link = e.target.closest('a');
-            if (link && link.dataset.page) {
-                e.preventDefault();
-                navigateToPage(link.dataset.page);
-            }
-        });
 
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
             await updateUserUI(session?.user);
