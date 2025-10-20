@@ -101,6 +101,14 @@
                         <span>مدیریت فاکتورها</span>
                         <span class="text-indigo-500">&larr;</span>
                      </a>
+                     <a href="https://demanduteam.github.io/bazaario-PO-management/" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between p-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        <span>مدیریت سفارشات خرید</span>
+                        <span class="text-indigo-500">&larr;</span>
+                     </a>
+                     <a href="https://demanduteam.github.io/bazaario-profit-Analysis-Dashboard/" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between p-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        <span>داشبورد تحلیل سود</span>
+                        <span class="text-indigo-500">&larr;</span>
+                     </a>
                 </div>
 
                 <!-- Logout Button -->
@@ -117,12 +125,12 @@
     </main>
 
     <script type="module">
-        const { createClient } = supabase;
+        const { createClient } = window.supabase;
 
         // --- Configuration ---
         // It's best practice to use environment variables for these, but for this example, they are here.
         const SUPABASE_URL = 'https://wehyjatotbzxargnxasg.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZD5M7MJNv7n1qmIDHQBNFiY';
         const ADMIN_ROLE_ID = 1; // The role ID for admin users
 
         // --- Supabase Client Initialization ---
