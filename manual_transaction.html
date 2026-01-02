@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ثبت تراکنش دستی - اصلاح حساب</title>
+    
+    <!-- Core Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Jalaali Date Library -->
+    <script src="https://cdn.jsdelivr.net/npm/jalaali-js/dist/jalaali.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        vazir: ['Vazirmatn', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        }
+                    }
+                },
+            },
+        }
+    </script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #f8fafc;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 1.5rem;
+            left: 1.5rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .toast {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s ease-out;
+            min-width: 300px;
+            background: white;
+            border-right: 4px solid;
+        }
+        .toast.success { border-color: #22c55e; }
+        .toast.error { border-color: #ef4444; }
+        
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Calendar Styles */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+        }
+        .calendar-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 0.375rem;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+        .calendar-day:hover:not(:disabled) {
+            background-color: #dcfce7; /* brand-100 */
+            color: #16a34a; /* brand-600 */
+        }
+        .calendar-day.selected {
+            background-color: #16a34a; /* brand-600 */
+            color: white;
+            font-weight: bold;
+        }
+        .calendar-day.today {
+            border: 1px solid #16a34a;
+        }
+        .calendar-day.empty {
+            cursor: default;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Supabase Config ---
+        const { createClient } = supabase;
+        const supabaseUrl = 'https://wehyjatotbzxargnxasg.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
+        const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+        // --- Helper Functions ---
+        const formatNumber = (num) => num ? Number(num).toLocaleString('en-US') : '';
+        const parseNumber = (str) => Number(String(str).replace(/,/g, '')) || 0;
+        
+        // --- Toast Context ---
+        const ToastContext = React.createContext();
+        const ToastProvider = ({ children }) => {
+            const [toasts, setToasts] = React.useState([]);
+            const addToast = (msg, type = 'success') => {
+                const id = Date.now();
+                setToasts(prev => [...prev, { id, msg, type }]);
+                setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
+            };
+            return (
+                <ToastContext.Provider value={addToast}>
+                    {children}
+                    <div className="toast-container">
+                        {toasts.map(t => (
+                            <div key={t.id} className={`toast ${t.type}`}>
+                                <div className={`ml-3 ${t.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                    {t.type === 'success' ? '✓' : '⚠'}
+                                </div>
+                                <div className="text-sm font-medium">{t.msg}</div>
+                            </div>
+                        ))}
+                    </div>
+                </ToastContext.Provider>
+            );
+        };
+
+        // --- Jalali Calendar Component ---
+        const monthNames = [
+            "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+            "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+        ];
+        const weekDays = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
+
+        const JalaliDatePicker = ({ isOpen, onClose, onSelect, selectedDate }) => {
+            if (!isOpen) return null;
+
+            // Initialize view state based on selectedDate or today
+            const getInitialState = () => {
+                if (selectedDate) {
+                    const parts = selectedDate.split('/');
+                    if (parts.length === 3) {
+                        return { jy: parseInt(parts[0]), jm: parseInt(parts[1]) };
+                    }
+                }
+                const today = jalaali.toJalaali(new Date());
+                return { jy: today.jy, jm: today.jm };
+            };
+
+            const [view, setView] = React.useState(getInitialState());
+
+            // Handle outside click to close
+            const overlayRef = React.useRef();
+            const handleOverlayClick = (e) => {
+                if (overlayRef.current === e.target) {
+                    onClose();
+                }
+            };
+
+            // Calculate days in month and start day
+            const daysInMonth = jalaali.jalaaliMonthLength(view.jy, view.jm);
+            const startDayOfWeek = (() => {
+                // jalaali.toGregorian returns { gy, gm, gd }
+                const g = jalaali.toGregorian(view.jy, view.jm, 1);
+                const date = new Date(g.gy, g.gm - 1, g.gd);
+                // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat
+                // We want: 0=Sat, 1=Sun, ..., 6=Fri
+                return (date.getDay() + 1) % 7;
+            })();
+
+            const handlePrevMonth = () => {
+                let { jy, jm } = view;
+                jm -= 1;
+                if (jm < 1) { jm = 12; jy -= 1; }
+                setView({ jy, jm });
+            };
+
+            const handleNextMonth = () => {
+                let { jy, jm } = view;
+                jm += 1;
+                if (jm > 12) { jm = 1; jy += 1; }
+                setView({ jy, jm });
+            };
+
+            const handleYearChange = (delta) => {
+                setView(prev => ({ ...prev, jy: prev.jy + delta }));
+            };
+
+            const handleDayClick = (day) => {
+                const formattedDate = `${view.jy}/${String(view.jm).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+                onSelect(formattedDate);
+            };
+
+            const goToday = () => {
+                const today = jalaali.toJalaali(new Date());
+                setView({ jy: today.jy, jm: today.jm });
+            };
+
+            // Check if a day is selected
+            const isSelected = (day) => {
+                if (!selectedDate) return false;
+                const [sy, sm, sd] = selectedDate.split('/').map(Number);
+                return sy === view.jy && sm === view.jm && sd === day;
+            };
+
+            // Check if a day is today
+            const isToday = (day) => {
+                const today = jalaali.toJalaali(new Date());
+                return today.jy === view.jy && today.jm === view.jm && today.jd === day;
+            };
+
+            return (
+                <div ref={overlayRef} onClick={handleOverlayClick} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-[scaleIn_0.2s_ease-out]">
+                        {/* Header */}
+                        <div className="bg-brand-600 text-white p-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => handleYearChange(-1)} className="p-1 hover:bg-white/20 rounded text-xs">سال قبل</button>
+                                    <button onClick={handlePrevMonth} className="p-1 hover:bg-white/20 rounded">❮</button>
+                                </div>
+                                <div className="font-bold text-lg">
+                                    {monthNames[view.jm - 1]} {view.jy}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={handleNextMonth} className="p-1 hover:bg-white/20 rounded">❯</button>
+                                    <button onClick={() => handleYearChange(1)} className="p-1 hover:bg-white/20 rounded text-xs">سال بعد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-4">
+                            {/* Week Days Header */}
+                            <div className="calendar-grid mb-2">
+                                {weekDays.map(d => (
+                                    <div key={d} className="text-center text-xs text-slate-500 font-bold py-1">
+                                        {d}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Days Grid */}
+                            <div className="calendar-grid">
+                                {Array.from({ length: startDayOfWeek }).map((_, i) => (
+                                    <div key={`empty-${i}`} className="calendar-day empty"></div>
+                                ))}
+                                {Array.from({ length: daysInMonth }).map((_, i) => {
+                                    const day = i + 1;
+                                    return (
+                                        <div 
+                                            key={day} 
+                                            onClick={() => handleDayClick(day)}
+                                            className={`calendar-day ${isSelected(day) ? 'selected' : ''} ${isToday(day) ? 'today' : ''}`}
+                                        >
+                                            {day}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between">
+                                <button onClick={goToday} className="text-sm text-brand-600 font-medium hover:text-brand-700">برو به امروز</button>
+                                <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">بستن</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main Component ---
+        const ManualTransactionApp = () => {
+            const addToast = React.useContext(ToastContext);
+            const [users, setUsers] = React.useState([]);
+            const [isLoadingUsers, setIsLoadingUsers] = React.useState(true);
+            const [recentTransactions, setRecentTransactions] = React.useState([]);
+            
+            // Form State
+            const [formData, setFormData] = React.useState({
+                userId: '',
+                transactionType: '1', // 1: Credit (Receive), 2: Debit (Pay)
+                amount: '',
+                date: '', 
+                description: ''
+            });
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [isSubmitting, setIsSubmitting] = React.useState(false);
+            const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
+
+            // Set default date to Jalali Today on Mount
+            React.useEffect(() => {
+                const now = new Date();
+                const j = jalaali.toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+                const defaultDate = `${j.jy}/${String(j.jm).padStart(2, '0')}/${String(j.jd).padStart(2, '0')}`;
+                setFormData(prev => ({ ...prev, date: defaultDate }));
+            }, []);
+
+            // Fetch Users on Mount
+            React.useEffect(() => {
+                const fetchUsers = async () => {
+                    const { data, error } = await supabaseClient
+                        .from('profiles')
+                        .select('id, fullname, roleid, mobile, national_id')
+                        .order('fullname');
+                    
+                    if (error) {
+                        console.error(error);
+                        addToast('خطا در دریافت لیست کاربران', 'error');
+                    } else {
+                        setUsers(data || []);
+                    }
+                    setIsLoadingUsers(false);
+                };
+                fetchUsers();
+                fetchRecentTransactions();
+            }, []);
+
+            // Fetch Recent Transactions
+            const fetchRecentTransactions = async () => {
+                const { data, error } = await supabaseClient
+                    .from('usertransaction')
+                    .select(`
+                        id, amount, createdat, description, transactiontypeid,
+                        profiles:userid (fullname)
+                    `)
+                    .order('createdat', { ascending: false }) 
+                    .order('id', { ascending: false })       
+                    .limit(5);
+
+                if (!error && data) {
+                    setRecentTransactions(data);
+                } else if (error) {
+                    console.error("خطا در دریافت تراکنش‌ها:", error);
+                }
+            };
+
+            const filteredUsers = React.useMemo(() => {
+                if (!searchQuery) return users.slice(0, 50); 
+                const lowerQuery = searchQuery.toLowerCase();
+                return users.filter(u => 
+                    (u.fullname || '').toLowerCase().includes(lowerQuery) ||
+                    (u.mobile || '').includes(lowerQuery) ||
+                    (u.national_id || '').includes(lowerQuery)
+                );
+            }, [users, searchQuery]);
+
+            const insertWithManualId = async (baseRecord) => {
+                const MAX_RETRIES = 5;
+                for (let i = 0; i < MAX_RETRIES; i++) {
+                    try {
+                        const { data: maxData } = await supabaseClient
+                            .from('usertransaction')
+                            .select('id')
+                            .order('id', { ascending: false })
+                            .limit(1)
+                            .single();
+                        
+                        let nextId = maxData ? maxData.id + 1 : 1;
+                        const recordWithId = { ...baseRecord, id: nextId };
+                        
+                        const { error } = await supabaseClient.from('usertransaction').insert(recordWithId);
+                        
+                        if (!error) return;
+                        if (error.code === '23505') { 
+                            await new Promise(r => setTimeout(r, Math.random() * 300));
+                            continue;
+                        }
+                        throw error;
+                    } catch (err) {
+                        if (i === MAX_RETRIES - 1) throw err;
+                    }
+                }
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const rawAmount = parseNumber(formData.amount);
+
+                if (!formData.userId) return addToast('لطفاً کاربر را انتخاب کنید', 'error');
+                if (rawAmount <= 0) return addToast('مبلغ باید بزرگتر از صفر باشد', 'error');
+                
+                const dateParts = formData.date.split('/');
+                if (dateParts.length !== 3) return addToast('تاریخ انتخاب نشده است', 'error');
+                
+                const jy = parseInt(dateParts[0], 10);
+                const jm = parseInt(dateParts[1], 10);
+                const jd = parseInt(dateParts[2], 10);
+
+                if (!jalaali.isValidJalaaliDate(jy, jm, jd)) {
+                    return addToast('تاریخ نامعتبر است', 'error');
+                }
+
+                // Convert to Gregorian for Database
+                const g = jalaali.toGregorian(jy, jm, jd);
+                const gregorianDate = `${g.gy}-${String(g.gm).padStart(2, '0')}-${String(g.gd).padStart(2, '0')}`;
+
+                setIsSubmitting(true);
+                try {
+                    const finalAmount = formData.transactionType === '1' ? rawAmount : -rawAmount;
+
+                    await insertWithManualId({
+                        userid: formData.userId,
+                        amount: finalAmount,
+                        createdat: gregorianDate,
+                        transactiontypeid: parseInt(formData.transactionType),
+                        description: formData.description || ''
+                    });
+
+                    addToast('تراکنش با موفقیت ثبت شد', 'success');
+                    
+                    setFormData(prev => ({ ...prev, amount: '', description: '' }));
+                    fetchRecentTransactions();
+
+                } catch (err) {
+                    console.error(err);
+                    addToast('خطا در ثبت تراکنش: ' + err.message, 'error');
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {/* Sidebar / Info Panel */}
+                    <div className="w-full md:w-1/3 lg:w-1/4 bg-slate-900 text-white p-6 flex flex-col justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold mb-2 text-brand-500">ابزار ثبت تراکنش</h1>
+                            <p className="text-slate-400 text-sm mb-8">
+                                از این پنل برای ثبت تراکنش‌های مالی فراموش‌شده، قدیمی یا اصلاحی استفاده کنید.
+                            </p>
+                            
+                            <div className="bg-slate-800 rounded-lg p-4 mb-4 border border-slate-700">
+                                <h3 className="font-semibold mb-2 text-yellow-400">نکات مهم:</h3>
+                                <ul className="text-sm text-slate-300 space-y-2 list-disc list-inside">
+                                    <li>این تراکنش‌ها مستقیماً روی <strong>مانده حساب</strong> کاربر اعمال می‌شوند.</li>
+                                    <li>برای "دریافت پول از مشتری"، گزینه <strong>دریافت وجه</strong> را انتخاب کنید.</li>
+                                    <li>برای "پرداخت پول به تامین‌کننده"، گزینه <strong>پرداخت وجه</strong> را انتخاب کنید.</li>
+                                    <li>برای انتخاب تاریخ، روی فیلد تاریخ کلیک کنید.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-4">
+                            اتصال به پایگاه داده: Supabase<br/>
+                            نسخه ابزار: 1.4 (تقویم گرافیکی)
+                        </div>
+                    </div>
+
+                    {/* Main Form Area */}
+                    <div className="w-full md:w-2/3 lg:w-3/4 p-6 md:p-12 overflow-y-auto">
+                        <div className="max-w-2xl mx-auto">
+                            
+                            <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-lg border border-slate-200 p-6 md:p-8 mb-8">
+                                <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                                    <span className="bg-brand-100 text-brand-700 p-2 rounded-lg">✍</span>
+                                    ثبت تراکنش جدید
+                                </h2>
+
+                                {/* User Selection */}
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">انتخاب کاربر (مشتری / تامین‌کننده)</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            className="w-full border border-slate-300 rounded-lg p-3 pr-10 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+                                            placeholder="جستجو با نام، موبایل یا کد ملی..."
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                        />
+                                        <div className="absolute left-3 top-3 text-slate-400">🔍</div>
+                                    </div>
+                                    
+                                    <div className="mt-2 border border-slate-200 rounded-lg max-h-48 overflow-y-auto bg-slate-50">
+                                        {isLoadingUsers ? (
+                                            <div className="p-4 text-center text-slate-500">در حال بارگذاری کاربران...</div>
+                                        ) : filteredUsers.length === 0 ? (
+                                            <div className="p-4 text-center text-slate-500">کاربری یافت نشد.</div>
+                                        ) : (
+                                            filteredUsers.map(u => (
+                                                <div 
+                                                    key={u.id}
+                                                    onClick={() => {
+                                                        setFormData({...formData, userId: u.id});
+                                                        setSearchQuery(u.fullname);
+                                                    }}
+                                                    className={`p-3 cursor-pointer border-b last:border-0 border-slate-100 flex justify-between items-center hover:bg-brand-50 transition ${formData.userId === u.id ? 'bg-brand-100 border-l-4 border-l-brand-600' : ''}`}
+                                                >
+                                                    <div>
+                                                        <div className="font-medium text-slate-800">{u.fullname}</div>
+                                                        <div className="text-xs text-slate-500">{u.mobile} {u.national_id ? `| ${u.national_id}` : ''}</div>
+                                                    </div>
+                                                    <div className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-600">
+                                                        {u.roleid === 1 ? 'مدیر' : u.roleid === 3 ? 'تامین‌کننده' : 'مشتری'}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                    {/* Transaction Type */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">نوع عملیات</label>
+                                        <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                                            <button 
+                                                type="button"
+                                                onClick={() => setFormData({...formData, transactionType: '1'})}
+                                                className={`flex-1 py-2 rounded-md text-sm font-medium transition ${formData.transactionType === '1' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                + دریافت وجه
+                                            </button>
+                                            <button 
+                                                type="button"
+                                                onClick={() => setFormData({...formData, transactionType: '2'})}
+                                                className={`flex-1 py-2 rounded-md text-sm font-medium transition ${formData.transactionType === '2' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                - پرداخت وجه
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Amount */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">مبلغ (تومان)</label>
+                                        <input 
+                                            type="text" 
+                                            value={formData.amount}
+                                            onChange={e => setFormData({...formData, amount: formatNumber(parseNumber(e.target.value))})}
+                                            className="w-full border border-slate-300 rounded-lg p-3 text-left font-mono text-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                            placeholder="0"
+                                            dir="ltr"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                    {/* Date */}
+                                    <div className="relative">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">تاریخ تراکنش</label>
+                                        <div 
+                                            onClick={() => setIsCalendarOpen(true)}
+                                            className="w-full border border-slate-300 rounded-lg p-3 text-center cursor-pointer hover:border-brand-500 bg-white flex items-center justify-center gap-2 transition"
+                                        >
+                                            <span className="text-slate-600 font-mono text-lg">{formData.date}</span>
+                                            <span className="text-slate-400">📅</span>
+                                        </div>
+                                        
+                                        <JalaliDatePicker 
+                                            isOpen={isCalendarOpen} 
+                                            onClose={() => setIsCalendarOpen(false)}
+                                            selectedDate={formData.date}
+                                            onSelect={(date) => {
+                                                setFormData({ ...formData, date });
+                                                setIsCalendarOpen(false);
+                                            }}
+                                        />
+                                    </div>
+                                    
+                                    {/* Description */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">کد پیگیری / توضیحات</label>
+                                        <input 
+                                            type="text"
+                                            value={formData.description}
+                                            onChange={e => setFormData({...formData, description: e.target.value})}
+                                            className="w-full border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-brand-500 outline-none"
+                                            placeholder="مثلاً: کد رهگیری ۱۲۳۴۵..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    disabled={isSubmitting}
+                                    className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-6 rounded-lg transition transform active:scale-95 disabled:bg-slate-400 disabled:transform-none flex justify-center items-center gap-2"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                            در حال ثبت...
+                                        </>
+                                    ) : 'ثبت نهایی تراکنش'}
+                                </button>
+                            </form>
+
+                            {/* Recent Transactions List */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="bg-slate-50 p-4 border-b border-slate-200">
+                                    <h3 className="font-bold text-slate-700">تراکنش‌های اخیر ثبت شده</h3>
+                                </div>
+                                <div>
+                                    {recentTransactions.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-400">هنوز تراکنشی ثبت نشده است.</div>
+                                    ) : (
+                                        <table className="w-full text-right text-sm">
+                                            <thead className="bg-slate-50 text-slate-500">
+                                                <tr>
+                                                    <th className="p-3 font-normal">شناسه</th>
+                                                    <th className="p-3 font-normal">کاربر</th>
+                                                    <th className="p-3 font-normal">کد پیگیری / توضیحات</th>
+                                                    <th className="p-3 font-normal">مبلغ</th>
+                                                    <th className="p-3 font-normal">تاریخ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {recentTransactions.map(tx => (
+                                                    <tr key={tx.id} className="hover:bg-slate-50">
+                                                        <td className="p-3 font-mono text-slate-400">{tx.id}</td>
+                                                        <td className="p-3 font-medium">{tx.profiles?.fullname || 'نامشخص'}</td>
+                                                        <td className="p-3 text-slate-600 max-w-[150px] truncate">{tx.description || '-'}</td>
+                                                        <td className={`p-3 font-bold ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`} dir="ltr">
+                                                            {formatNumber(tx.amount)}
+                                                        </td>
+                                                        <td className="p-3 text-slate-500">{tx.createdat ? new Date(tx.createdat).toLocaleDateString('fa-IR') : '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <ToastProvider>
+                <ManualTransactionApp />
+            </ToastProvider>
+        );
+    </script>
+</body>
+</html>
