@@ -133,6 +133,7 @@
         const supabaseUrl = 'https://wehyjatotbzxargnxasg.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
         const supabaseClient = createClient(supabaseUrl, supabaseKey);
+        const ADMIN_ROLE_ID = 1;
 
         // --- Helper Functions ---
         const formatNumber = (num) => num ? Number(num).toLocaleString('en-US') : '';
@@ -311,6 +312,9 @@
         // --- Main Component ---
         const ManualTransactionApp = () => {
             const addToast = React.useContext(ToastContext);
+            const [isAuthLoading, setIsAuthLoading] = React.useState(true);
+            const [currentUser, setCurrentUser] = React.useState(null);
+
             const [users, setUsers] = React.useState([]);
             const [isLoadingUsers, setIsLoadingUsers] = React.useState(true);
             const [recentTransactions, setRecentTransactions] = React.useState([]);
@@ -327,33 +331,76 @@
             const [isSubmitting, setIsSubmitting] = React.useState(false);
             const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
-            // Set default date to Jalali Today on Mount
+            // --- Authentication Check ---
             React.useEffect(() => {
-                const now = new Date();
-                const j = jalaali.toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
-                const defaultDate = `${j.jy}/${String(j.jm).padStart(2, '0')}/${String(j.jd).padStart(2, '0')}`;
-                setFormData(prev => ({ ...prev, date: defaultDate }));
+                const checkAuth = async () => {
+                    try {
+                        // 1. Check Session
+                        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+                        
+                        if (sessionError || !session) {
+                            console.log("No session found, redirecting...");
+                            window.location.href = 'index.html';
+                            return;
+                        }
+
+                        // 2. Check Admin Role
+                        const { data: profile, error: profileError } = await supabaseClient
+                            .from('profiles')
+                            .select('roleid')
+                            .eq('id', session.user.id)
+                            .single();
+
+                        if (profileError || !profile || profile.roleid !== ADMIN_ROLE_ID) {
+                            console.log("Not an admin, redirecting...");
+                            await supabaseClient.auth.signOut(); // Ensure they are logged out if they aren't admin
+                            window.location.href = 'index.html';
+                            return;
+                        }
+
+                        // Success
+                        setCurrentUser(session.user);
+                        setIsAuthLoading(false);
+                    } catch (err) {
+                        console.error("Auth check failed:", err);
+                        window.location.href = 'index.html';
+                    }
+                };
+                
+                checkAuth();
             }, []);
 
-            // Fetch Users on Mount
+            // Set default date to Jalali Today on Mount (only if auth succeeds logic flows)
             React.useEffect(() => {
-                const fetchUsers = async () => {
-                    const { data, error } = await supabaseClient
-                        .from('profiles')
-                        .select('id, fullname, roleid, mobile, national_id')
-                        .order('fullname');
-                    
-                    if (error) {
-                        console.error(error);
-                        addToast('خطا در دریافت لیست کاربران', 'error');
-                    } else {
-                        setUsers(data || []);
-                    }
-                    setIsLoadingUsers(false);
-                };
-                fetchUsers();
-                fetchRecentTransactions();
-            }, []);
+                if (!isAuthLoading) {
+                    const now = new Date();
+                    const j = jalaali.toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
+                    const defaultDate = `${j.jy}/${String(j.jm).padStart(2, '0')}/${String(j.jd).padStart(2, '0')}`;
+                    setFormData(prev => ({ ...prev, date: defaultDate }));
+                }
+            }, [isAuthLoading]);
+
+            // Fetch Users and Transactions on Mount (only if auth succeeds)
+            React.useEffect(() => {
+                if (!isAuthLoading) {
+                    const fetchUsers = async () => {
+                        const { data, error } = await supabaseClient
+                            .from('profiles')
+                            .select('id, fullname, roleid, mobile, national_id')
+                            .order('fullname');
+                        
+                        if (error) {
+                            console.error(error);
+                            addToast('خطا در دریافت لیست کاربران', 'error');
+                        } else {
+                            setUsers(data || []);
+                        }
+                        setIsLoadingUsers(false);
+                    };
+                    fetchUsers();
+                    fetchRecentTransactions();
+                }
+            }, [isAuthLoading]);
 
             // Fetch Recent Transactions
             const fetchRecentTransactions = async () => {
@@ -459,12 +506,32 @@
                 }
             };
 
+            const handleLogout = async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = 'index.html';
+            }
+
+            // --- Render Loading State ---
+            if (isAuthLoading) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+                        <div className="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p className="text-lg">در حال بررسی دسترسی...</p>
+                        <p className="text-sm text-slate-400 mt-2">اگر هدایت نشدید، صفحه را رفرش کنید.</p>
+                    </div>
+                );
+            }
+
+            // --- Render Main App ---
             return (
                 <div className="min-h-screen flex flex-col md:flex-row">
                     {/* Sidebar / Info Panel */}
                     <div className="w-full md:w-1/3 lg:w-1/4 bg-slate-900 text-white p-6 flex flex-col justify-between">
                         <div>
-                            <h1 className="text-2xl font-bold mb-2 text-brand-500">ابزار ثبت تراکنش</h1>
+                            <div className="flex justify-between items-center mb-6">
+                                <h1 className="text-2xl font-bold text-brand-500">ابزار ثبت تراکنش</h1>
+                                <button onClick={handleLogout} className="text-xs bg-red-600 hover:bg-red-700 px-3 py-1 rounded transition">خروج</button>
+                            </div>
                             <p className="text-slate-400 text-sm mb-8">
                                 از این پنل برای ثبت تراکنش‌های مالی فراموش‌شده، قدیمی یا اصلاحی استفاده کنید.
                             </p>
@@ -480,8 +547,8 @@
                             </div>
                         </div>
                         <div className="text-xs text-slate-500 mt-4">
+                            کاربر: {currentUser?.email}<br/>
                             اتصال به پایگاه داده: Supabase<br/>
-                            نسخه ابزار: 1.4 (تقویم گرافیکی)
                         </div>
                     </div>
 
