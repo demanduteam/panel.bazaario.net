@@ -164,6 +164,7 @@
             const [dbData, setDbData] = React.useState([]);
             const [activeSubsCount, setActiveSubsCount] = React.useState(0);
             const [catalogStats, setCatalogStats] = React.useState({ newProducts: 0, updatedProducts: 0, activeSuppliers: 0 });
+            const [overallTotals, setOverallTotals] = React.useState({ customers: 0, suppliers: 0, products: 0 });
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState(null);
 
@@ -347,6 +348,23 @@
                             });
                         }
 
+                        // --- Fetch Overall Totals for Roles ---
+                        let totalCust = 0;
+                        let totalSupp = 0;
+                        const custRoleArr = Array.from(customerRoleIds);
+                        const suppRoleArr = Array.from(supplierRoleIds);
+                        
+                        if (custRoleArr.length > 0) {
+                            const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
+                                .in('roleid', custRoleArr).eq('isdeleted', false).lte('createdat', endDate);
+                            totalCust = count || 0;
+                        }
+                        if (suppRoleArr.length > 0) {
+                            const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
+                                .in('roleid', suppRoleArr).eq('isdeleted', false).lte('createdat', endDate);
+                            totalSupp = count || 0;
+                        }
+
                         // 2. Fetch Demands
                         const { data: demands, error: err1 } = await supabase
                             .from('demand')
@@ -418,6 +436,16 @@
                             productsData = pData2 || [];
                         } else {
                             productsData = pData1 || [];
+                        }
+
+                        // --- Fetch Overall Total for Products ---
+                        let totalProd = 0;
+                        const { count: pCount1, error: pCErr1 } = await supabase.from('product').select('*', { count: 'exact', head: true }).lte('createdat', endDate);
+                        if (pCErr1) {
+                            const { count: pCount2 } = await supabase.from('product').select('*', { count: 'exact', head: true }).lte('created_at', endDate);
+                            totalProd = pCount2 || 0;
+                        } else {
+                            totalProd = pCount1 || 0;
                         }
 
                         const { data: priceHist } = await supabase
@@ -668,6 +696,7 @@
                             fulfillmentDelayAvg: d.fulfillmentDelays.length > 0 ? d.fulfillmentDelays.reduce((a,b)=>a+b,0)/d.fulfillmentDelays.length : 0,
                         }));
 
+                        setOverallTotals({ customers: totalCust, suppliers: totalSupp, products: totalProd });
                         setDbData(processedData);
 
                     } catch (e) {
@@ -844,11 +873,25 @@
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">مشتری</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.newCustomers)}</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">
+                                        {isLoading ? '...' : (
+                                            <>
+                                                {formatNumber(stats?.newCustomers)}
+                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.customers)})</span>
+                                            </>
+                                        )}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کننده</span>
-                                    <span className="font-en font-bold text-pink-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newSuppliers)}</span>
+                                    <span className="font-en font-bold text-pink-600 text-sm">
+                                        {isLoading ? '...' : (
+                                            <>
+                                                {formatNumber(stats?.newSuppliers)}
+                                                <span className="text-[10px] text-pink-400/70 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.suppliers)})</span>
+                                            </>
+                                        )}
+                                    </span>
                                 </div>
                             </div>
                             
@@ -872,7 +915,14 @@
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5" title="کالاهای جدید اضافه شده به سیستم">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">کالای جدید</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(catalogStats.newProducts)}</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">
+                                        {isLoading ? '...' : (
+                                            <>
+                                                {formatNumber(catalogStats.newProducts)}
+                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.products)})</span>
+                                            </>
+                                        )}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5" title="تعداد کالاهایی که قیمتشان آپدیت شده">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">تنوع کالای آپدیت‌شده</span>
