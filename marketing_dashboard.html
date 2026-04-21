@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>داشبورد شاخص‌های عملکرد (KPI)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        vazir: ['Vazirmatn', 'sans-serif'],
+                        en: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff', 100: '#dbeafe', 400: '#60a5fa',
+                            500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a',
+                        }
+                    },
+                    boxShadow: {
+                        'soft': '0 4px 20px -2px rgba(0,0,0,0.05)',
+                        'card': '0 8px 24px -4px rgba(0,0,0,0.08)',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Jalaali JS -->
+    <script src="https://cdn.jsdelivr.net/npm/jalaali-js/dist/jalaali.js"></script>
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Recharts -->
+    <script src="https://unpkg.com/prop-types@15.7.2/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.0/umd/Recharts.js"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #f8fafc;
+            color: #334155;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+        .glass-card {
+            background: #ffffff;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 4px 20px -2px rgba(0,0,0,0.03);
+        }
+        
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 640px) {
+            .mobile-box-grid { display: flex; flex-direction: column; gap: 1rem; }
+            .recharts-wrapper { font-size: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } = window.Recharts;
+        const jalaali = window.jalaali;
+
+        // ==========================================
+        // 1. Supabase Initialization
+        // ==========================================
+        const supabaseUrl = typeof __supabase_url !== 'undefined' ? __supabase_url : 'https://wehyjatotbzxargnxasg.supabase.co';
+        const supabaseKey = typeof __supabase_anon_key !== 'undefined' ? __supabase_anon_key : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaHlqYXRvdGJ6eGFyZ254YXNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MTIwMjEsImV4cCI6MjA2NzQ4ODAyMX0.2R448DuEBlTrNvaYXiYZ8D5M7MJNv7n1qmIDHQBNFiY';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        const ADMIN_ROLE_ID = 1;
+
+        // ==========================================
+        // 2. Helper Functions
+        // ==========================================
+        const formatCurrency = (value) => {
+            if (!value) return '۰ تومان';
+            if (value >= 1e9) return (value / 1e9).toFixed(2) + ' میلیارد تومان';
+            if (value >= 1e6) return (value / 1e6).toFixed(1) + ' میلیون تومان';
+            return value.toLocaleString('fa-IR') + ' تومان';
+        };
+
+        const formatNumber = (num) => Number(num || 0).toLocaleString('fa-IR');
+
+        // ==========================================
+        // 3. UI Components (Box Design)
+        // ==========================================
+        const KpiBox = ({ title, value, subtitle, icon, color, isLoading }) => {
+            const colorClasses = {
+                blue: 'bg-blue-50 text-blue-600 border-blue-100',
+                emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+                purple: 'bg-purple-50 text-purple-600 border-purple-100',
+                amber: 'bg-amber-50 text-amber-600 border-amber-100',
+                rose: 'bg-rose-50 text-rose-600 border-rose-100',
+                slate: 'bg-slate-50 text-slate-600 border-slate-200',
+                cyan: 'bg-cyan-50 text-cyan-600 border-cyan-100',
+                teal: 'bg-teal-50 text-teal-600 border-teal-100',
+                pink: 'bg-pink-50 text-pink-600 border-pink-100',
+                indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100'
+            };
+
+            return (
+                <div className="glass-card rounded-2xl p-4 sm:p-5 flex items-center gap-4 fade-in w-full transition-shadow hover:shadow-card">
+                    <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center text-xl sm:text-2xl border shrink-0 ${colorClasses[color]}`}>
+                        <i className={`fa-solid ${icon}`}></i>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h4 className="text-slate-500 text-xs sm:text-[13px] font-semibold mb-1 truncate">{title}</h4>
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                            {isLoading ? (
+                                <div className="h-7 w-20 bg-slate-200 animate-pulse rounded"></div>
+                            ) : (
+                                <span className="text-xl sm:text-2xl font-black text-slate-800 font-en tracking-tight">{value}</span>
+                            )}
+                            {subtitle && !isLoading && <span className="text-[10px] sm:text-xs text-slate-400 font-medium whitespace-nowrap">{subtitle}</span>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 4. Main Dashboard Component
+        // ==========================================
+        const Dashboard = () => {
+            // --- Authentication States ---
+            const [isAuthorized, setIsAuthorized] = React.useState(false);
+            const [authLoading, setAuthLoading] = React.useState(true);
+
+            // Filters
+            const [selectedYear, setSelectedYear] = React.useState(1405);
+            const [filterType, setFilterType] = React.useState('seasonal');
+            const [selectedPeriod, setSelectedPeriod] = React.useState(1);
+
+            // Data States
+            const [dbData, setDbData] = React.useState([]);
+            const [activeSubsCount, setActiveSubsCount] = React.useState(0);
+            const [catalogStats, setCatalogStats] = React.useState({ newProducts: 0, updatedProducts: 0, activeSuppliers: 0 });
+            const [isLoading, setIsLoading] = React.useState(false);
+            const [error, setError] = React.useState(null);
+
+            // --- Authentication Verification ---
+            React.useEffect(() => {
+                const verifyAuth = async () => {
+                    try {
+                        // 1. Get current session
+                        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                        
+                        if (sessionError || !session) {
+                            console.warn("No active session found. Redirecting to login...");
+                            window.location.href = 'index.html';
+                            return;
+                        }
+
+                        // 2. Verify Admin Role
+                        const { data: profile, error: profileError } = await supabase
+                            .from('profiles')
+                            .select('roleid')
+                            .eq('id', session.user.id)
+                            .single();
+
+                        if (profileError || !profile || profile.roleid !== ADMIN_ROLE_ID) {
+                            console.warn("User lacks admin permissions. Redirecting...");
+                            alert('شما دسترسی لازم برای مشاهده این داشبورد را ندارید.');
+                            window.location.href = 'index.html';
+                            return;
+                        }
+
+                        // User is valid and is an Admin
+                        setIsAuthorized(true);
+                    } catch (err) {
+                        console.error("Auth verification failed:", err);
+                        window.location.href = 'index.html';
+                    } finally {
+                        setAuthLoading(false);
+                    }
+                };
+
+                verifyAuth();
+
+                // Listen for manual sign outs in other tabs
+                const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+                    if (event === 'SIGNED_OUT') {
+                        window.location.href = 'index.html';
+                    }
+                });
+
+                return () => {
+                    if (authListener && authListener.subscription) {
+                        authListener.subscription.unsubscribe();
+                    }
+                };
+            }, []);
+
+            // Period Options
+            const getPeriodOptions = () => {
+                if (filterType === 'seasonal') return [ { value: 1, label: 'فصل اول (بهار)' }, { value: 2, label: 'فصل دوم (تابستان)' }, { value: 3, label: 'فصل سوم (پاییز)' }, { value: 4, label: 'فصل چهارم (زمستان)' } ];
+                if (filterType === 'monthly') return ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'].map((m, i) => ({ value: i + 1, label: m }));
+                if (filterType === 'weekly') return Array.from({length: 52}, (_, i) => ({ value: i + 1, label: `هفته ${i + 1}` }));
+                return [];
+            };
+
+            React.useEffect(() => { setSelectedPeriod(1); }, [filterType, selectedYear]);
+
+            // Data Fetching Logic (Supabase) - Only runs if Authorized
+            React.useEffect(() => {
+                if (!isAuthorized) return;
+
+                const fetchPeriodData = async () => {
+                    setIsLoading(true);
+                    setError(null);
+                    try {
+                        let startMonth = 1, endMonth = 12, startDay = 1, endDay = 29;
+                        let startDoy = 1, endDoy = 365;
+
+                        const getDoy = (y, m, d) => {
+                            let doy = 0;
+                            for (let i = 1; i < m; i++) doy += jalaali.jalaaliMonthLength(y, i);
+                            return doy + d;
+                        };
+
+                        const getJDateByDoy = (year, doy) => {
+                            let m = 1; let d = doy;
+                            while (m <= 12) {
+                                let dim = jalaali.jalaaliMonthLength(year, m);
+                                if (d <= dim) break;
+                                d -= dim;
+                                m++;
+                            }
+                            if (m > 12) { m = 12; d = jalaali.jalaaliMonthLength(year, 12); }
+                            return { m, d };
+                        };
+
+                        if (filterType === 'seasonal') {
+                            startMonth = (selectedPeriod - 1) * 3 + 1;
+                            endMonth = selectedPeriod * 3;
+                            startDay = 1;
+                            endDay = jalaali.jalaaliMonthLength(selectedYear, endMonth);
+                            startDoy = getDoy(selectedYear, startMonth, startDay);
+                            endDoy = getDoy(selectedYear, endMonth, endDay);
+                        } else if (filterType === 'monthly') {
+                            startMonth = selectedPeriod;
+                            endMonth = selectedPeriod;
+                            startDay = 1;
+                            endDay = jalaali.jalaaliMonthLength(selectedYear, endMonth);
+                            startDoy = getDoy(selectedYear, startMonth, startDay);
+                            endDoy = getDoy(selectedYear, endMonth, endDay);
+                        } else if (filterType === 'weekly') {
+                            startDoy = (selectedPeriod - 1) * 7 + 1;
+                            endDoy = selectedPeriod * 7;
+                            
+                            const maxDoy = jalaali.isLeapJalaaliYear(selectedYear) ? 366 : 365;
+                            if (endDoy > maxDoy) endDoy = maxDoy;
+
+                            const startJ = getJDateByDoy(selectedYear, startDoy);
+                            const endJ = getJDateByDoy(selectedYear, endDoy);
+
+                            startMonth = startJ.m;
+                            startDay = startJ.d;
+                            endMonth = endJ.m;
+                            endDay = endJ.d;
+                        }
+
+                        const startG = jalaali.toGregorian(selectedYear, startMonth, startDay);
+                        const endG = jalaali.toGregorian(selectedYear, endMonth, endDay);
+                        
+                        const startDate = new Date(startG.gy, startG.gm - 1, startG.gd, 0, 0, 0).toISOString();
+                        const endDate = new Date(endG.gy, endG.gm - 1, endG.gd, 23, 59, 59).toISOString();
+
+                        // Fetch Active Subscriptions based on the selected period
+                        const { data: subsProfiles } = await supabase
+                            .from('profiles')
+                            .select(`
+                                id,
+                                subscription_start_date,
+                                subscription_plan ( duration_days )
+                            `)
+                            .not('subscription_plan_id', 'is', null)
+                            .lte('subscription_start_date', endDate) // فیلتر: فقط اشتراک‌هایی که قبل از پایان این دوره شروع شده‌اند
+                            .eq('isdeleted', false);
+                            
+                        let validCount = 0;
+                        const periodStart = new Date(startDate);
+                        
+                        if (subsProfiles) {
+                            subsProfiles.forEach(p => {
+                                // بررسی وجود تاریخ شروع و مدت زمان اشتراک
+                                if (p.subscription_start_date && p.subscription_plan && typeof p.subscription_plan.duration_days === 'number') {
+                                    const subStart = new Date(p.subscription_start_date);
+                                    const subEnd = new Date(subStart);
+                                    // اضافه کردن مدت زمان اشتراک به تاریخ شروع
+                                    subEnd.setDate(subEnd.getDate() + p.subscription_plan.duration_days);
+                                    
+                                    // اگر تاریخ پایان اشتراک بزرگتر یا مساوی شروع بازه انتخابی باشد (اشتراک در این بازه معتبر بوده)
+                                    if (subEnd >= periodStart) {
+                                        validCount++;
+                                    }
+                                }
+                            });
+                        }
+                        setActiveSubsCount(validCount);
+
+                        // 1. Fetch Status Types to find which ID means "Fulfilled"
+                        const { data: statusTypes } = await supabase.from('demandstatustype').select('id, main_status');
+                        const fulfilledStatusIds = new Set((statusTypes || [])
+                            .filter(s => ['Fulfilled', 'تامین شده', 'تامین شد', 'موفق'].includes(s.main_status))
+                            .map(s => s.id));
+                            
+                        // 1.5 Fetch Roles to identify Customer vs Supplier
+                        const { data: rolesData } = await supabase.from('role').select('id, title');
+                        const customerRoleIds = new Set();
+                        const supplierRoleIds = new Set();
+                        
+                        if (rolesData) {
+                            rolesData.forEach(r => {
+                                const t = (r.title || '').toLowerCase();
+                                if (t.includes('customer') || t.includes('مشتری') || t.includes('خریدار')) customerRoleIds.add(r.id);
+                                if (t.includes('supplier') || t.includes('تامین') || t.includes('فروشنده') || t.includes('سپلایر')) supplierRoleIds.add(r.id);
+                            });
+                        }
+
+                        // 2. Fetch Demands
+                        const { data: demands, error: err1 } = await supabase
+                            .from('demand')
+                            .select('id, createdat, is_emergency, customeruserid')
+                            .gte('createdat', startDate)
+                            .lte('createdat', endDate)
+                            .eq('isdeleted', false)
+                            .limit(10000);
+
+                        // Create lookup map for demands to avoid slow array searches
+                        const demandUserIdMap = new Map();
+                        (demands || []).forEach(d => {
+                            if (d.id && d.customeruserid) demandUserIdMap.set(d.id, d.customeruserid);
+                        });
+
+                        // 3. Fetch Demand Items
+                        const { data: demandItems, error: err2 } = await supabase
+                            .from('demand_item')
+                            .select(`
+                                id, demandid, sale_price, approved_supply_quantity, createdat, demandstatusid,
+                                demandinvoicedetail(id, quantity, sales_price)
+                            `)
+                            .gte('createdat', startDate)
+                            .lte('createdat', endDate)
+                            .limit(20000);
+
+                        // 4. Fetch Demand Item Logs
+                        const { data: demandLogs, error: err3 } = await supabase
+                            .from('demand_item_log')
+                            .select('id, demand_item_id, created_at, new_values')
+                            .gte('created_at', startDate)
+                            .lte('created_at', endDate)
+                            .limit(30000);
+                            
+                        // 4.5 Fetch Followups
+                        const { data: followups, error: err4 } = await supabase
+                            .from('customer_followups')
+                            .select('id, created_at, customer_id')
+                            .gte('created_at', startDate)
+                            .lte('created_at', endDate)
+                            .limit(20000);
+                            
+                        // 4.6 Fetch New Profiles (Users)
+                        const { data: newProfiles, error: err5 } = await supabase
+                            .from('profiles')
+                            .select('id, createdat, roleid')
+                            .gte('createdat', startDate)
+                            .lte('createdat', endDate)
+                            .eq('isdeleted', false)
+                            .limit(20000);
+
+                        // 4.7 Fetch Catalog & Supplier Stock Price History
+                        let productsData = [];
+                        const { data: pData1, error: pErr1 } = await supabase
+                            .from('product')
+                            .select('id, createdat')
+                            .gte('createdat', startDate)
+                            .lte('createdat', endDate)
+                            .limit(20000);
+                            
+                        // پشتیبان‌گیری در صورتی که نام ستون در دیتابیس created_at باشد
+                        if (pErr1) {
+                            const { data: pData2 } = await supabase
+                                .from('product')
+                                .select('id, created_at')
+                                .gte('created_at', startDate)
+                                .lte('created_at', endDate)
+                                .limit(20000);
+                            productsData = pData2 || [];
+                        } else {
+                            productsData = pData1 || [];
+                        }
+
+                        const { data: priceHist } = await supabase
+                            .from('supplierstock_price_history')
+                            .select('productid, supplieruserid')
+                            .gte('changed_at', startDate)
+                            .lte('changed_at', endDate)
+                            .limit(30000);
+
+                        const updatedProductsSet = new Set();
+                        const activeSuppliersSet = new Set();
+                        (priceHist || []).forEach(ph => {
+                            if (ph.productid) updatedProductsSet.add(ph.productid);
+                            if (ph.supplieruserid) activeSuppliersSet.add(ph.supplieruserid);
+                        });
+
+                        setCatalogStats({
+                            newProducts: productsData.length,
+                            updatedProducts: updatedProductsSet.size,
+                            activeSuppliers: activeSuppliersSet.size
+                        });
+
+                        if (err1) throw new Error(`خطا در جدول تقاضا (demand): ${err1.message}`);
+                        if (err2) throw new Error(`خطا در جدول آیتم‌های تقاضا (demand_item): ${err2.message}`);
+                        if (err4) throw new Error(`خطا در جدول پیگیری‌ها (customer_followups): ${err4.message}`);
+                        if (err5) throw new Error(`خطا در جدول پروفایل‌ها (profiles): ${err5.message}`);
+
+                        // 5. Fetch Subscriptions to categorize users (Chunking to avoid query limit errors)
+                        let subscribedUsers = new Set();
+                        const allUserIds = new Set();
+                        
+                        if (demands && demands.length > 0) {
+                            demands.forEach(d => { if(d.customeruserid) allUserIds.add(d.customeruserid); });
+                        }
+                        if (followups && followups.length > 0) {
+                            followups.forEach(f => { if(f.customer_id) allUserIds.add(f.customer_id); });
+                        }
+
+                        let uniqueUsersArray = [];
+                        if (allUserIds.size > 0) {
+                            uniqueUsersArray = Array.from(allUserIds);
+                            const chunkSize = 500; 
+                            for (let i = 0; i < uniqueUsersArray.length; i += chunkSize) {
+                                const chunk = uniqueUsersArray.slice(i, i + chunkSize);
+                                const { data: subsData } = await supabase
+                                    .from('user_subscription_history')
+                                    .select('user_id')
+                                    .in('user_id', chunk);
+                                    
+                                if (subsData) {
+                                    subsData.forEach(s => subscribedUsers.add(s.user_id));
+                                }
+                            }
+                        }
+
+                        // 6. Find Returning Buyers to isolate First-Time Buyers
+                        let returningUserIds = new Set();
+                        if (uniqueUsersArray.length > 0) {
+                            for (let i = 0; i < uniqueUsersArray.length; i += 500) {
+                                const chunk = uniqueUsersArray.slice(i, i + 500);
+                                const { data: pastD } = await supabase
+                                    .from('demand')
+                                    .select('customeruserid')
+                                    .in('customeruserid', chunk)
+                                    .lt('createdat', startDate)
+                                    .eq('isdeleted', false);
+                                if (pastD) pastD.forEach(d => returningUserIds.add(d.customeruserid));
+                            }
+                        }
+
+                        // Initialize Mapping
+                        const dayMap = {};
+                        for(let doy = startDoy; doy <= endDoy; doy++) {
+                            const jDate = getJDateByDoy(selectedYear, doy);
+                            const key = `${selectedYear}/${String(jDate.m).padStart(2,'0')}/${String(jDate.d).padStart(2,'0')}`;
+                            dayMap[key] = { 
+                                dateStr: key, 
+                                demandsNormal: 0, demandsSub: 0, 
+                                // Followups
+                                followupsNormal: 0, followupsSub: 0,
+                                // Users
+                                newCustomers: 0, newSuppliers: 0, newBuyers: 0,
+                                // Invoice based metrics
+                                salesCount: 0, salesNormal: 0, salesSub: 0, gmv: 0, gmvNormal: 0, gmvSub: 0,
+                                // Item metrics
+                                totalItems: 0, itemsNormal: 0, itemsSub: 0,
+                                fulfilledItems: 0, fulfilledItemsNormal: 0, fulfilledItemsSub: 0, soldItems: 0,
+                                responseDelays: [], responseDelaysNormal: [], responseDelaysSub: [], 
+                                fulfillmentDelays: [], fulfillmentDelaysNormal: [], fulfillmentDelaysSub: [] 
+                            };
+                        }
+
+                        // Map Demand User Sub Status
+                        const demandIsSub = {};
+                        (demands || []).forEach(d => {
+                            if (!d.createdat) return;
+                            const isSub = subscribedUsers.has(d.customeruserid);
+                            demandIsSub[d.id] = isSub;
+
+                            const gDate = new Date(d.createdat);
+                            const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                            const key = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`;
+                            
+                            if(dayMap[key]) {
+                                if(isSub) dayMap[key].demandsSub += 1; 
+                                else dayMap[key].demandsNormal += 1;
+                            }
+                        });
+                        
+                        // Process Followups
+                        (followups || []).forEach(f => {
+                            if (!f.created_at) return;
+                            const isSub = subscribedUsers.has(f.customer_id);
+                            
+                            const gDate = new Date(f.created_at);
+                            const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                            const key = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`;
+                            
+                            if(dayMap[key]) {
+                                if(isSub) dayMap[key].followupsSub += 1; 
+                                else dayMap[key].followupsNormal += 1;
+                            }
+                        });
+                        
+                        // Process New Users (Profiles)
+                        (newProfiles || []).forEach(p => {
+                            if (!p.createdat) return;
+                            
+                            const gDate = new Date(p.createdat);
+                            const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                            const key = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`;
+                            
+                            if (dayMap[key]) {
+                                if (customerRoleIds.has(p.roleid)) dayMap[key].newCustomers += 1;
+                                else if (supplierRoleIds.has(p.roleid)) dayMap[key].newSuppliers += 1;
+                            }
+                        });
+
+                        // Sets to track conversions efficiently
+                        const invoicedDemandsSet = new Set();
+                        const periodBuyersSet = new Set();
+
+                        // Process Demand Items & Logs
+                        (demandItems || []).forEach(di => {
+                            if (!di.createdat) return;
+
+                            const gDate = new Date(di.createdat);
+                            const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                            const key = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`;
+                            
+                            if (dayMap[key]) {
+                                // Basic Item Aggregation
+                                dayMap[key].totalItems += 1;
+                                const isSub = demandIsSub[di.demandid];
+                                if (isSub) dayMap[key].itemsSub += 1; else dayMap[key].itemsNormal += 1;
+
+                                // Fulfillment check
+                                const isFulfilled = fulfilledStatusIds.has(di.demandstatusid);
+                                if (isFulfilled) {
+                                    dayMap[key].fulfilledItems += 1;
+                                    if (isSub) dayMap[key].fulfilledItemsSub += 1;
+                                    else dayMap[key].fulfilledItemsNormal += 1;
+                                }
+
+                                // Sold (Invoiced) check based on demandinvoicedetail relation
+                                const invDetails = Array.isArray(di.demandinvoicedetail) ? di.demandinvoicedetail : (di.demandinvoicedetail ? [di.demandinvoicedetail] : []);
+                                
+                                if (invDetails.length > 0) {
+                                    dayMap[key].soldItems += 1;
+                                    
+                                    // Record unique demands that led to sales
+                                    if (!invoicedDemandsSet.has(di.demandid)) {
+                                        invoicedDemandsSet.add(di.demandid);
+                                        dayMap[key].salesCount += 1;
+                                        if (isSub) dayMap[key].salesSub += 1;
+                                        else dayMap[key].salesNormal += 1;
+
+                                        // Identify First-Time Buyers
+                                        const uid = demandUserIdMap.get(di.demandid);
+                                        if (uid && !periodBuyersSet.has(uid)) {
+                                            periodBuyersSet.add(uid);
+                                            // If they don't exist in past demands, they are brand new buyers!
+                                            if (!returningUserIds.has(uid)) {
+                                                dayMap[key].newBuyers += 1;
+                                            }
+                                        }
+                                    }
+
+                                    // Calculate GMV for this specific sold item
+                                    invDetails.forEach(detail => {
+                                        const qty = Number(detail.quantity) || 0;
+                                        const price = Number(detail.sales_price) || 0;
+                                        const itemGmv = qty * price;
+
+                                        dayMap[key].gmv += itemGmv;
+                                        if (isSub) dayMap[key].gmvSub += itemGmv;
+                                        else dayMap[key].gmvNormal += itemGmv;
+                                    });
+                                }
+                                
+                                // Logs Analysis (Delays)
+                                const logs = (demandLogs || []).filter(l => String(l.demand_item_id) === String(di.id));
+                                if(logs.length > 0) {
+                                    // 1. First Response Time (Time from item creation to first log)
+                                    const firstLogTime = new Date(Math.min(...logs.map(l => new Date(l.created_at))));
+                                    const responseDiff = (firstLogTime - gDate) / (1000 * 60 * 60); // Hours
+                                    if (responseDiff >= 0) {
+                                        dayMap[key].responseDelays.push(responseDiff);
+                                        if (isSub) dayMap[key].responseDelaysSub.push(responseDiff);
+                                        else dayMap[key].responseDelaysNormal.push(responseDiff);
+                                    }
+
+                                    // 2. Fulfillment Time
+                                    if (isFulfilled) {
+                                        // Find the log where status changed to fulfilled
+                                        const fLogs = logs.filter(l => {
+                                            const nv = typeof l.new_values === 'string' ? JSON.parse(l.new_values || '{}') : (l.new_values || {});
+                                            return nv.demandstatusid && fulfilledStatusIds.has(nv.demandstatusid);
+                                        });
+                                        
+                                        let fulfilledLogTime = null;
+                                        if (fLogs.length > 0) {
+                                            fulfilledLogTime = new Date(Math.min(...fLogs.map(l => new Date(l.created_at))));
+                                        } else {
+                                            // Fallback if status changed but log doesn't clearly show it in new_values
+                                            fulfilledLogTime = new Date(Math.max(...logs.map(l => new Date(l.created_at))));
+                                        }
+
+                                        if (fulfilledLogTime) {
+                                            const fulfillDiff = (fulfilledLogTime - gDate) / (1000 * 60 * 60); // Hours
+                                            if (fulfillDiff >= 0) {
+                                                dayMap[key].fulfillmentDelays.push(fulfillDiff);
+                                                if (isSub) dayMap[key].fulfillmentDelaysSub.push(fulfillDiff);
+                                                else dayMap[key].fulfillmentDelaysNormal.push(fulfillDiff);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        let processedData = Object.values(dayMap);
+
+                        // Calculate daily averages
+                        processedData = processedData.map(d => ({
+                            ...d,
+                            responseDelayAvg: d.responseDelays.length > 0 ? d.responseDelays.reduce((a,b)=>a+b,0)/d.responseDelays.length : 0,
+                            fulfillmentDelayAvg: d.fulfillmentDelays.length > 0 ? d.fulfillmentDelays.reduce((a,b)=>a+b,0)/d.fulfillmentDelays.length : 0,
+                        }));
+
+                        setDbData(processedData);
+
+                    } catch (e) {
+                        console.error("Dashboard Runtime Error:", e);
+                        setError(e.message);
+                        setDbData([]); 
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
+
+                fetchPeriodData();
+            }, [selectedYear, filterType, selectedPeriod, isAuthorized]);
+
+            // Calculate Totals
+            const stats = React.useMemo(() => {
+                if (!dbData.length) return null;
+                const sum = (k) => dbData.reduce((a,b) => a + (b[k] || 0), 0);
+                
+                // Helper to calculate averages for specific delay arrays
+                const calcAvg = (arrKey) => {
+                    const count = dbData.reduce((a,b) => a + (b[arrKey] ? b[arrKey].length : 0), 0);
+                    const total = dbData.reduce((a,b) => a + (b[arrKey] ? b[arrKey].reduce((x,y)=>x+y,0) : 0), 0);
+                    return count > 0 ? total / count : 0;
+                };
+
+                const itemsNormal = sum('itemsNormal');
+                const itemsSub = sum('itemsSub');
+                const fulfilledItemsNormal = sum('fulfilledItemsNormal');
+                const fulfilledItemsSub = sum('fulfilledItemsSub');
+
+                return {
+                    // Demands
+                    demandsNormal: sum('demandsNormal'),
+                    demandsSub: sum('demandsSub'),
+                    totalDemands: sum('demandsNormal') + sum('demandsSub'),
+                    // Followups
+                    followupsNormal: sum('followupsNormal'),
+                    followupsSub: sum('followupsSub'),
+                    totalFollowups: sum('followupsNormal') + sum('followupsSub'),
+                    // Users
+                    newCustomers: sum('newCustomers'),
+                    newSuppliers: sum('newSuppliers'),
+                    totalNewUsers: sum('newCustomers') + sum('newSuppliers'),
+                    newBuyers: sum('newBuyers'),
+                    // Demand Items
+                    totalItems: sum('totalItems'),
+                    itemsNormal: itemsNormal,
+                    itemsSub: itemsSub,
+                    fulfilledItems: sum('fulfilledItems'),
+                    fulfilledItemsNormal: fulfilledItemsNormal,
+                    fulfilledItemsSub: fulfilledItemsSub,
+                    fulfillmentRate: sum('totalItems') > 0 ? (sum('fulfilledItems') / sum('totalItems')) * 100 : 0,
+                    fulfillmentRateNormal: itemsNormal > 0 ? (fulfilledItemsNormal / itemsNormal) * 100 : 0,
+                    fulfillmentRateSub: itemsSub > 0 ? (fulfilledItemsSub / itemsSub) * 100 : 0,
+                    responseDelayHours: calcAvg('responseDelays'),
+                    responseDelayAvgNormal: calcAvg('responseDelaysNormal'),
+                    responseDelayAvgSub: calcAvg('responseDelaysSub'),
+                    fulfillmentDelayHours: calcAvg('fulfillmentDelays'),
+                    fulfillmentDelayAvgNormal: calcAvg('fulfillmentDelaysNormal'),
+                    fulfillmentDelayAvgSub: calcAvg('fulfillmentDelaysSub'),
+                    // Sales & Funnel
+                    salesCount: sum('salesCount'),
+                    salesNormal: sum('salesNormal'),
+                    salesSub: sum('salesSub'),
+                    gmv: sum('gmv'),
+                    gmvNormal: sum('gmvNormal'),
+                    gmvSub: sum('gmvSub'),
+                    soldItems: sum('soldItems'),
+                    funnelConversion: sum('fulfilledItems') > 0 ? (sum('soldItems') / sum('fulfilledItems')) * 100 : 0,
+                };
+            }, [dbData]);
+
+            // Charts Formatting
+            const chartData = dbData.map(d => ({
+                name: d.dateStr.split('/').slice(1).join('/'),
+                'عادی': d.demandsNormal,
+                'اشتراکی': d.demandsSub,
+                'GMV': d.gmv,
+                'کل اقلام': d.totalItems,
+                'اقلام تامین شده': d.fulfilledItems
+            }));
+
+            // --- Show Loading While Checking Auth ---
+            if (authLoading) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-700">
+                        <i className="fa-solid fa-shield-halved text-5xl text-brand-500 mb-4 animate-pulse"></i>
+                        <h2 className="font-bold text-xl mb-2">در حال تایید هویت</h2>
+                        <p className="text-sm text-slate-500">لطفا تا بررسی دسترسی شما منتظر بمانید...</p>
+                    </div>
+                );
+            }
+
+            // --- Main Render (Authorized Only) ---
+            return (
+                <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen flex flex-col gap-6">
+                    
+                    {/* Header Box */}
+                    <div className="glass-card rounded-3xl p-4 sm:p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 sm:gap-6 z-10 relative">
+                        <div className="flex items-center gap-3 sm:gap-4 w-full xl:w-auto justify-between xl:justify-start">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-brand-500 to-brand-700 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0">
+                                    <i className="fa-solid fa-chart-column text-xl sm:text-2xl"></i>
+                                </div>
+                                <div>
+                                    <h1 className="text-lg sm:text-2xl font-black text-slate-800">گزارشات بازاریابی</h1>
+                                    <p className="text-slate-500 text-xs sm:text-sm mt-0.5 sm:mt-1">رصد دقیق تقاضا، اقلام و عملیات (متصل به دیتابیس)</p>
+                                </div>
+                            </div>
+                            {/* Back to Menu Button */}
+                            <a href="index.html" className="xl:hidden flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl transition-colors text-xs font-bold shrink-0">
+                                <span className="hidden sm:inline">منوی اصلی</span>
+                                <i className="fa-solid fa-arrow-left"></i>
+                            </a>
+                        </div>
+
+                        <div className="flex items-center gap-4 w-full xl:w-auto">
+                            {/* Filters Box */}
+                            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 bg-slate-50 p-2.5 sm:p-2 rounded-2xl border border-slate-100 w-full xl:w-auto flex-1">
+                                <div className="flex items-center gap-2 px-2 pb-2 sm:pb-0 border-b sm:border-b-0 border-slate-200">
+                                    <i className="fa-solid fa-filter text-slate-400 text-sm"></i>
+                                    <span className="text-xs sm:text-sm font-bold text-slate-600">فیلتر:</span>
+                                </div>
+                                
+                                <div className="flex gap-2 w-full sm:w-auto">
+                                    <select 
+                                        value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                        className="flex-1 sm:flex-none bg-white border border-slate-200 text-xs sm:text-sm rounded-xl px-2 sm:px-4 py-2 sm:py-2.5 font-en font-semibold focus:outline-none focus:border-brand-400"
+                                    >
+                                        <option value={1404}>1404</option><option value={1405}>1405</option>
+                                    </select>
+
+                                    <select 
+                                        value={filterType} onChange={(e) => setFilterType(e.target.value)}
+                                        className="flex-1 sm:flex-none bg-white border border-slate-200 text-xs sm:text-sm rounded-xl px-2 sm:px-4 py-2 sm:py-2.5 font-vazir font-semibold focus:outline-none focus:border-brand-400"
+                                    >
+                                        <option value="seasonal">فصلی</option><option value="monthly">ماهانه</option><option value="weekly">هفتگی</option>
+                                    </select>
+                                </div>
+
+                                <select 
+                                    value={selectedPeriod} onChange={(e) => setSelectedPeriod(Number(e.target.value))}
+                                    className="w-full sm:w-auto bg-brand-500 text-white border-transparent text-xs sm:text-sm rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 font-vazir font-bold focus:outline-none shadow-md cursor-pointer"
+                                >
+                                    {getPeriodOptions().map(opt => <option key={opt.value} value={opt.value} className="bg-white text-slate-800">{opt.label}</option>)}
+                                </select>
+                            </div>
+                            
+                            {/* Back to Menu Button (Desktop) */}
+                            <a href="index.html" className="hidden xl:flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-2xl transition-colors text-sm font-bold shrink-0 border border-slate-200 h-full">
+                                بازگشت
+                                <i className="fa-solid fa-arrow-left"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    {/* Error Message */}
+                    {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200"><i className="fa-solid fa-triangle-exclamation ml-2"></i>خطا در بارگذاری دیتابیس: استفاده از دیتای نمونه. ({error})</div>}
+
+                    {/* Section 1: Overview & Sales (Parent) */}
+                    <div>
+                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2">
+                            <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
+                            مرور کلی تقاضا، فروش و کاربران
+                        </h2>
+                        
+                        <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                            
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-pink-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-user-plus ml-1"></i> کاربران جدید</h4>
+                                    <span className="font-en font-black text-pink-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalNewUsers)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">مشتری</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.newCustomers)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کننده</span>
+                                    <span className="font-en font-bold text-pink-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newSuppliers)}</span>
+                                </div>
+                            </div>
+                            
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-rose-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-crown ml-1"></i> ویژه و خریداران بار اول</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="کاربرانی که در این دوره اشتراکشان معتبر بوده است">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک‌های فعال</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(activeSubsCount)}</span>
+                                </div>
+                                <div className="flex justify-between items-center" title="مشتریانی که اولین خرید خود را در این دوره ثبت کرده‌اند">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">خریداران بار اول</span>
+                                    <span className="font-en font-bold text-rose-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newBuyers)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-cyan-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-boxes-packing ml-1"></i> کاتالوگ و قیمت‌گذاری</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="کالاهای جدید اضافه شده به سیستم">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">کالای جدید</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(catalogStats.newProducts)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="تعداد کالاهایی که قیمتشان آپدیت شده">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تنوع کالای آپدیت‌شده</span>
+                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(catalogStats.updatedProducts)}</span>
+                                </div>
+                                <div className="flex justify-between items-center" title="تعداد تامین‌کنندگانی که قیمت اعلام کرده‌اند">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کنندگان فعال</span>
+                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(catalogStats.activeSuppliers)}</span>
+                                </div>
+                            </div>
+                            
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-blue-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-file-lines ml-1"></i> کل تقاضا</h4>
+                                    <span className="font-en font-black text-blue-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalDemands)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                    <span className="font-en font-bold text-blue-600 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsSub)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-indigo-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-headset ml-1"></i> پیگیری و تماس</h4>
+                                    <span className="font-en font-black text-indigo-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalFollowups)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با اشتراکی</span>
+                                    <span className="font-en font-bold text-indigo-600 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsSub)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-bag-shopping ml-1"></i> فاکتورها (فروش)</h4>
+                                    <span className="font-en font-black text-emerald-600 text-lg">{isLoading ? '...' : formatNumber(stats?.salesCount)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به ویژه</span>
+                                    <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-teal-500 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-money-bill-trend-up ml-1"></i> مجموع فروش (GMV)</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV ویژه</span>
+                                    <span className="font-en font-bold text-teal-600 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvSub)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Section 2: Demand Items & Operations */}
+                    <div>
+                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                            <span className="bg-purple-100 text-purple-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-boxes-stacked"></i></span>
+                            وضعیت اقلام تقاضا (Demand Items)
+                        </h2>
+                        
+                        <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                            <KpiBox title="تعداد کل اقلام تقاضا" value={formatNumber(stats?.totalItems)} icon="fa-box" color="purple" isLoading={isLoading} />
+                            
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-purple-400 w-full">
+                                <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">تفکیک اقلام (عادی / ویژه)</h4>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                    <span className="font-en font-bold text-purple-600 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsSub)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-amber-400 w-full">
+                                <h4 className="text-slate-500 text-xs font-semibold mb-3">زمان‌سنجی عملکرد</h4>
+                                <div className="grid grid-cols-[auto_1fr_1fr] gap-x-2 gap-y-2 items-center text-center">
+                                    {/* Headers */}
+                                    <div></div>
+                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا پاسخ</div>
+                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا تامین</div>
+                                    
+                                    {/* Normal */}
+                                    <div className="text-[11px] font-medium text-slate-600 text-right pr-1">عادی</div>
+                                    <div className="text-[12px] font-en font-bold text-slate-700 bg-slate-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="text-[12px] font-en font-bold text-amber-600 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-amber-400 ml-0.5 font-normal">h</span></div>
+                                    
+                                    {/* VIP */}
+                                    <div className="text-[11px] font-medium text-purple-600 text-right pr-1">ویژه</div>
+                                    <div className="text-[12px] font-en font-bold text-purple-700 bg-purple-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-purple-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="text-[12px] font-en font-bold text-emerald-600 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-emerald-400 ml-0.5 font-normal">h</span></div>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
+                                <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">درصد تامین موفق اقلام</h4>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateNormal?.toFixed(1)}%`}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                    <span className="font-en font-bold text-emerald-600 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateSub?.toFixed(1)}%`}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Section 3: Sales Funnel (Conversion) */}
+                    <div>
+                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                            <span className="bg-amber-100 text-amber-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-filter-circle-dollar"></i></span>
+                            قیف فروش و تبدیل (Sales Funnel)
+                        </h2>
+                        
+                        <div className="glass-card rounded-2xl p-6 fade-in border-r-4 border-r-amber-500 w-full mb-8">
+                            <p className="text-[11px] text-slate-500 mb-6 text-center md:text-right font-medium">از کل اقلامی که تیم تامین موفق به تهیه آن‌ها شده، چه تعداد در نهایت توسط مشتری در فاکتور پرداخت شده‌اند؟</p>
+                            
+                            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
+                                {/* Step 1: Fulfilled */}
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                        <i className="fa-solid fa-box-open"></i>
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700">اقلام تامین شده</span>
+                                    <span className="font-en font-black text-xl text-slate-800 mt-1">{isLoading ? '...' : formatNumber(stats?.fulfilledItems)}</span>
+                                </div>
+
+                                {/* Arrow / Funnel Line */}
+                                <div className="hidden md:flex flex-col items-center px-4">
+                                    <div className="h-0.5 w-16 bg-slate-200 relative">
+                                        <i className="fa-solid fa-caret-left absolute -left-1 -top-2 text-slate-300 text-lg"></i>
+                                    </div>
+                                </div>
+                                <div className="flex md:hidden flex-col items-center py-2 text-slate-300">
+                                    <i className="fa-solid fa-caret-down text-lg"></i>
+                                </div>
+
+                                {/* Step 2: Sold */}
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                        <i className="fa-solid fa-file-invoice-dollar"></i>
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700">اقلام فاکتور شده (فروخته شده)</span>
+                                    <span className="font-en font-black text-xl text-emerald-600 mt-1">{isLoading ? '...' : formatNumber(stats?.soldItems)}</span>
+                                </div>
+
+                                {/* Conversion Result */}
+                                <div className="w-full md:w-auto mt-6 md:mt-0 md:mr-8 bg-amber-50 p-5 rounded-2xl border border-amber-100 flex flex-col items-center justify-center flex-1">
+                                    <span className="text-xs font-bold text-amber-700 mb-2 bg-amber-100/50 px-3 py-1 rounded-full">نرخ تبدیل تامین به فروش</span>
+                                    <span className="font-en font-black text-4xl text-amber-600 tracking-tighter" dir="ltr">
+                                        {isLoading ? '...' : `${stats?.funnelConversion?.toFixed(1)}%`}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Charts Area */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                        <div className="lg:col-span-2 glass-card rounded-2xl p-4 sm:p-5 fade-in">
+                            <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-4 sm:mb-6">روند تقاضا و اقلام در این دوره</h3>
+                            <div className="h-[250px] sm:h-[300px] w-full" dir="ltr">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="cItems" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
+                                            <linearGradient id="cDemand" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                        <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                        <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', fontFamily: 'Vazirmatn', textAlign: 'right', fontSize: '12px'}} />
+                                        <Legend wrapperStyle={{fontSize: '11px', fontFamily: 'Vazirmatn', paddingTop: '10px'}} />
+                                        <Area type="monotone" name="اقلام (Items)" dataKey="کل اقلام" stroke="#a855f7" strokeWidth={2} fill="url(#cItems)" />
+                                        <Area type="monotone" name="تقاضا (Demands)" dataKey="عادی" stroke="#3b82f6" strokeWidth={2} fill="url(#cDemand)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                        
+                        <div className="glass-card rounded-2xl p-4 sm:p-5 fade-in">
+                            <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-1">ارزش فروش روزانه (GMV)</h3>
+                            <p className="text-[10px] sm:text-xs text-slate-500 mb-4 sm:mb-6">بر اساس quantity * sale_price</p>
+                            <div className="h-[200px] sm:h-[250px] w-full" dir="ltr">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                                        <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val) => [formatNumber(val) + ' ت', 'GMV']} contentStyle={{fontSize:'12px', fontFamily:'Vazirmatn', borderRadius:'8px', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.1)'}} />
+                                        <Bar dataKey="GMV" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
