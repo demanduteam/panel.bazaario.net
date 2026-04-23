@@ -109,7 +109,7 @@
         const ADMIN_ROLE_ID = 1;
 
         // ==========================================
-        // 2. Helper Functions
+        // 2. Helper Functions & Config
         // ==========================================
         const formatCurrency = (value) => {
             if (!value) return '۰ تومان';
@@ -153,6 +153,56 @@
         const getPersianWeekday = (date) => {
             const weekdays = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
             return weekdays[date.getDay()];
+        };
+
+        // --- OKR Metrics Configuration ---
+        const AVAILABLE_METRICS = [
+            { key: 'gmv', label: 'ارزش کل فروش (GMV)', isCurrency: true },
+            { key: 'salesCount', label: 'تعداد کل فاکتورهای فروش', isCurrency: false },
+            { key: 'totalDemands', label: 'تعداد کل تقاضاها', isCurrency: false },
+            { key: 'totalNewUsers', label: 'کل کاربران جدید', isCurrency: false },
+            { key: 'newCustomers', label: 'مشتریان جدید', isCurrency: false },
+            { key: 'newSuppliers', label: 'تامین‌کنندگان جدید', isCurrency: false },
+            { key: 'newBuyers', label: 'خریداران بار اول', isCurrency: false },
+            { key: 'totalItems', label: 'تعداد کل اقلام تقاضا', isCurrency: false },
+            { key: 'fulfilledItems', label: 'تعداد اقلام تامین‌شده', isCurrency: false },
+            { key: 'soldItems', label: 'تعداد اقلام فروخته‌شده', isCurrency: false },
+            { key: 'diversityRequested', label: 'تنوع کالای درخواستی (یونیک)', isCurrency: false },
+            { key: 'diversitySold', label: 'تنوع کالای فروخته‌شده (یونیک)', isCurrency: false },
+            { key: 'funnelConversion', label: 'نرخ تبدیل تقاضا به فروش (%)', isCurrency: false, isPercent: true },
+            { key: 'fulfillmentRateNormal', label: 'درصد تامین موفق (عادی)', isCurrency: false, isPercent: true },
+            { key: 'fulfillmentRateSub', label: 'درصد تامین موفق (اشتراکی)', isCurrency: false, isPercent: true }
+        ];
+
+        const formatOkrValue = (val, metricKey) => {
+            const metric = AVAILABLE_METRICS.find(m => m.key === metricKey);
+            if (metric?.isCurrency) return formatCurrency(val);
+            if (metric?.isPercent) return val.toFixed(1) + '%';
+            return formatNumber(val);
+        };
+
+        // Engine to calculate a specific metric from an array of marketing_daily_stats
+        const computeMetricFromStats = (dailyStats, metricKey) => {
+            const sum = (k) => (dailyStats || []).reduce((acc, curr) => acc + (Number(curr[k]) || 0), 0);
+            
+            switch(metricKey) {
+                case 'gmv': return sum('total_gmv');
+                case 'salesCount': return sum('sales_count');
+                case 'totalDemands': return sum('total_demands');
+                case 'totalNewUsers': return sum('new_customers') + sum('new_suppliers');
+                case 'newCustomers': return sum('new_customers');
+                case 'newSuppliers': return sum('new_suppliers');
+                case 'newBuyers': return sum('new_buyers');
+                case 'totalItems': return sum('total_items');
+                case 'fulfilledItems': return sum('fulfilled_items');
+                case 'soldItems': return sum('sold_items');
+                case 'diversityRequested': return sum('unique_products_requested');
+                case 'diversitySold': return sum('unique_products_sold');
+                case 'funnelConversion': return sum('fulfilled_items') > 0 ? (sum('sold_items') / sum('fulfilled_items')) * 100 : 0;
+                case 'fulfillmentRateNormal': return sum('items_normal') > 0 ? (sum('fulfilled_items_normal') / sum('items_normal')) * 100 : 0;
+                case 'fulfillmentRateSub': return sum('items_sub') > 0 ? (sum('fulfilled_items_sub') / sum('items_sub')) * 100 : 0;
+                default: return 0;
+            }
         };
 
         // ==========================================
@@ -200,10 +250,28 @@
             const [isAuthorized, setIsAuthorized] = React.useState(false);
             const [authLoading, setAuthLoading] = React.useState(true);
 
+            // Tab State
+            const [activeTab, setActiveTab] = React.useState('dashboard');
+
+            // OKR States
+            const [okrs, setOkrs] = React.useState(() => {
+                const saved = localStorage.getItem('bazaario_marketing_okrs');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [okrYear, setOkrYear] = React.useState(1405);
+            const [okrSeason, setOkrSeason] = React.useState(1);
+            const [newOkrOwner, setNewOkrOwner] = React.useState('');
+            const [newOkrMetric, setNewOkrMetric] = React.useState('gmv');
+            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_growth'); // 'cumulative' or 'weekly_growth'
+            const [newOkrTarget, setNewOkrTarget] = React.useState('');
+            const [isSubmittingOkr, setIsSubmittingOkr] = React.useState(false);
+
+            // Filter States
             const [selectedYear, setSelectedYear] = React.useState(1405);
             const [filterType, setFilterType] = React.useState('seasonal');
             const [selectedPeriod, setSelectedPeriod] = React.useState(1);
 
+            // Data States
             const [dbData, setDbData] = React.useState([]);
             const [stats, setStats] = React.useState(null);
             const [overallTotals, setOverallTotals] = React.useState({ customers: 0, suppliers: 0, products: 0 });
@@ -213,6 +281,11 @@
             
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState(null);
+
+            // Persist OKRs to local storage
+            React.useEffect(() => {
+                localStorage.setItem('bazaario_marketing_okrs', JSON.stringify(okrs));
+            }, [okrs]);
 
             React.useEffect(() => {
                 const verifyAuth = async () => {
@@ -261,7 +334,7 @@
                 return [];
             };
 
-            // محاسبه تاریخ میلادی شروع و پایان با توجه به نوع فیلتر (به صورت متمرکز)
+            // محاسبه تاریخ میلادی شروع و پایان با توجه به نوع فیلتر
             const { startGDate, endGDate } = React.useMemo(() => {
                 let sGDate, eGDate;
 
@@ -288,16 +361,12 @@
                     sGDate = new Date(sG.gy, sG.gm - 1, sG.gd);
                     eGDate = new Date(eG.gy, eG.gm - 1, eG.gd);
                 } else if (filterType === 'weekly') {
-                    // محاسبه هوشمندِ هفته بر اساس تقویم ایرانی (شروع هفته از شنبه)
                     const f1G = jalaali.toGregorian(selectedYear, 1, 1);
                     const f1Date = new Date(f1G.gy, f1G.gm - 1, f1G.gd);
                     
-                    // روز هفته میلادی (0=یکشنبه, ..., 6=شنبه)
                     const f1Weekday = f1Date.getDay(); 
-                    // تبدیل به روز هفته ایرانی (0=شنبه, 1=یکشنبه, ..., 6=جمعه)
                     const persianWeekday = (f1Weekday + 1) % 7; 
                     
-                    // هفته اول از شنبهِ منتهی به (یا خودِ) یکم فروردین شروع می‌شود
                     const week1Start = new Date(f1Date);
                     week1Start.setDate(week1Start.getDate() - persianWeekday);
                     
@@ -311,7 +380,7 @@
                 return { startGDate: sGDate, endGDate: eGDate };
             }, [selectedYear, filterType, selectedPeriod]);
 
-            // تولید رشته‌ی تاریخ برای نمایش به کاربر (به همراه روز هفته)
+            // تولید رشته‌ی تاریخ برای نمایش به کاربر
             const periodDateRange = React.useMemo(() => {
                 if (!startGDate || !endGDate) return '';
                 
@@ -324,7 +393,6 @@
                 return `${getPersianWeekday(startGDate)} ${startStr} تا ${getPersianWeekday(endGDate)} ${endStr}`;
             }, [startGDate, endGDate]);
 
-            // کنترلرهای قبلی و بعدی
             const handlePrev = () => {
                 if (selectedPeriod > 1) {
                     setSelectedPeriod(prev => prev - 1);
@@ -346,11 +414,10 @@
                 }
             };
 
-            // رفع باگِ پرشِ دوره: فقط وقتی 'نوع فیلتر' عوض می‌شود دوره به ۱ برگردد (نه وقتی سال عوض می‌شود)
             React.useEffect(() => { setSelectedPeriod(1); }, [filterType]);
 
             // ==========================================
-            // Main Data Fetching (Optimized using marketing_daily_stats)
+            // Main Data Fetching 
             // ==========================================
             React.useEffect(() => {
                 if (!isAuthorized || !startGDate || !endGDate) return;
@@ -367,7 +434,7 @@
                         const startDateFull = new Date(startGDate.getFullYear(), startGDate.getMonth(), startGDate.getDate(), 0, 0, 0).toISOString();
                         const endDateFull = new Date(endGDate.getFullYear(), endGDate.getMonth(), endGDate.getDate(), 23, 59, 59).toISOString();
 
-                        // 1. Fetch Aggregated Data from New Table (Lightweight Query!)
+                        // 1. Fetch Aggregated Data 
                         const { data: dailyStats, error: statsError } = await supabase
                             .from('marketing_daily_stats')
                             .select('*')
@@ -377,14 +444,13 @@
 
                         if (statsError) throw new Error(`خطا در جدول تجمیعی: ${statsError.message}`);
 
-                        // 2. Create the exact day map for Charts (ensuring no gaps even if DB has missing days)
+                        // 2. Chart Data mapping
                         const chartDataMap = [];
                         let currentDay = new Date(startGDate);
                         currentDay.setHours(0,0,0,0);
                         const endDayNoTime = new Date(endGDate);
                         endDayNoTime.setHours(0,0,0,0);
 
-                        // Build lookup map for fast chart rendering
                         const dbLookup = {};
                         (dailyStats || []).forEach(d => { dbLookup[d.record_date] = d; });
 
@@ -408,7 +474,7 @@
                         
                         setDbData(chartDataMap);
 
-                        // 3. Calculate sums for KPIs
+                        // 3. KPI Aggregation
                         const sum = (key) => (dailyStats || []).reduce((acc, curr) => acc + (Number(curr[key]) || 0), 0);
                         const avg = (key) => {
                             const validDays = (dailyStats || []).filter(d => Number(d[key]) > 0);
@@ -434,9 +500,8 @@
 
                         setOverallTotals({ customers: latestCust, suppliers: latestSupp, products: latestProd });
 
-                        // محاسبات دقیق و تفکیک شده جدید
-                        const soldItemsNormalCount = sum('sold_items_normal') || sum('fulfilled_items_normal'); // fallback
-                        const soldItemsSubCount = sum('sold_items_sub') || sum('fulfilled_items_sub'); // fallback
+                        const soldItemsNormalCount = sum('sold_items_normal') || sum('fulfilled_items_normal'); 
+                        const soldItemsSubCount = sum('sold_items_sub') || sum('fulfilled_items_sub'); 
                         const salesNormalCount = sum('sales_normal');
                         const salesSubCount = sum('sales_sub');
 
@@ -470,17 +535,14 @@
                             diversityRequestedSub: sum('unique_products_requested_sub'),
                             diversitySoldNormal: sum('unique_products_sold_normal'),
                             diversitySoldSub: sum('unique_products_sold_sub'),
-                            // Conversions
                             fulfillmentRateNormal: sum('items_normal') > 0 ? (sum('fulfilled_items_normal') / sum('items_normal')) * 100 : 0, 
                             fulfillmentRateSub: sum('items_sub') > 0 ? (sum('fulfilled_items_sub') / sum('items_sub')) * 100 : 0,
                             funnelConversion: sum('fulfilled_items') > 0 ? (sum('sold_items') / sum('fulfilled_items')) * 100 : 0,
                             diversityConversion: sum('unique_products_requested') > 0 ? (sum('unique_products_sold') / sum('unique_products_requested')) * 100 : 0,
                             diversityConversionNormal: sum('unique_products_requested_normal') > 0 ? (sum('unique_products_sold_normal') / sum('unique_products_requested_normal')) * 100 : 0,
                             diversityConversionSub: sum('unique_products_requested_sub') > 0 ? (sum('unique_products_sold_sub') / sum('unique_products_requested_sub')) * 100 : 0,
-                            // Averages
                             avgItemsPerInvoiceNormal: salesNormalCount > 0 ? soldItemsNormalCount / salesNormalCount : 0,
                             avgItemsPerInvoiceSub: salesSubCount > 0 ? soldItemsSubCount / salesSubCount : 0,
-                            // Delays
                             responseDelayAvgNormal: avg('response_delay_hours_normal'),
                             responseDelayAvgSub: avg('response_delay_hours_sub'),
                             fulfillmentDelayAvgNormal: avg('fulfillment_delay_hours_normal'),
@@ -490,10 +552,7 @@
                             activeSuppliersPriced: sum('active_suppliers_priced')
                         });
 
-
-                        // ==============================================================
-                        // --- 4. محاسبه تقاضاهای بدون اقدام زنده (همیشه آپدیت) ---
-                        // ==============================================================
+                        // 4. Live Unacted Demands
                         const now = new Date();
                         const { data: allRecentDemands } = await supabase
                             .from('demand')
@@ -541,7 +600,6 @@
 
                         allUnactedOverall.sort((a, b) => new Date(a.createdat) - new Date(b.createdat));
                         
-                        // واکشی نام و شهر کاربران مربوط به تقاضاهای معطل
                         const unactedUserIds = [...new Set(allUnactedOverall.map(d => d.customeruserid).filter(Boolean))];
                         const unactedProfilesMap = {};
                         if (unactedUserIds.length > 0) {
@@ -552,9 +610,7 @@
                                     .select('*')
                                     .in('id', chunk);
                                 if (profs) {
-                                    profs.forEach(p => {
-                                        unactedProfilesMap[p.id] = p;
-                                    });
+                                    profs.forEach(p => { unactedProfilesMap[p.id] = p; });
                                 }
                             }
                         }
@@ -586,6 +642,68 @@
             }, [startGDate, endGDate, isAuthorized]);
 
             const chartData = dbData;
+            
+            // --- OKR Submissions ---
+            const handleAddOkr = async (e) => {
+                e.preventDefault();
+                if(!newOkrTarget || !newOkrOwner) return;
+                
+                setIsSubmittingOkr(true);
+                let baselineVal = 0;
+
+                try {
+                    if (newOkrTargetType === 'weekly_growth') {
+                        // Calculate Date for Week 1 of the Selected Season
+                        const weekNum = (okrSeason - 1) * 13 + 1;
+                        
+                        const f1G = jalaali.toGregorian(okrYear, 1, 1);
+                        const f1Date = new Date(f1G.gy, f1G.gm - 1, f1G.gd);
+                        
+                        const f1Weekday = f1Date.getDay(); 
+                        const persianWeekday = (f1Weekday + 1) % 7; 
+                        
+                        const week1Start = new Date(f1Date);
+                        week1Start.setDate(week1Start.getDate() - persianWeekday + ((weekNum - 1) * 7));
+                        
+                        const week1End = new Date(week1Start);
+                        week1End.setDate(week1End.getDate() + 6);
+
+                        const startDateStr = week1Start.toISOString().split('T')[0];
+                        const endDateStr = week1End.toISOString().split('T')[0];
+
+                        // Fetch Week 1 Stats from DB
+                        const { data: wStats } = await supabase
+                            .from('marketing_daily_stats')
+                            .select('*')
+                            .gte('record_date', startDateStr)
+                            .lte('record_date', endDateStr);
+
+                        baselineVal = computeMetricFromStats(wStats, newOkrMetric);
+                    }
+                } catch (err) {
+                    console.error("Error fetching baseline:", err);
+                    baselineVal = 0;
+                }
+
+                const newOkr = {
+                    id: Date.now().toString(),
+                    metricKey: newOkrMetric,
+                    targetType: newOkrTargetType,
+                    baseline: baselineVal,
+                    target: Number(newOkrTarget),
+                    year: okrYear,
+                    season: okrSeason,
+                    owner: newOkrOwner
+                };
+                
+                setOkrs([...okrs, newOkr]);
+                setNewOkrTarget('');
+                setNewOkrOwner('');
+                setIsSubmittingOkr(false);
+            };
+
+            const currentYearOkrs = okrs.filter(o => o.year === selectedYear);
+            const seasonNames = {1: 'بهار', 2: 'تابستان', 3: 'پاییز', 4: 'زمستان'};
 
             // --- Show Loading While Checking Auth ---
             if (authLoading) {
@@ -611,7 +729,7 @@
                                 </div>
                                 <div>
                                     <h1 className="text-lg sm:text-2xl font-black text-slate-800">گزارشات بازاریابی</h1>
-                                    <p className="text-slate-500 text-xs sm:text-sm mt-0.5 sm:mt-1">رصد فوق‌سریع شاخص‌ها (متصل به جدول تجمیعی)</p>
+                                    <p className="text-slate-500 text-xs sm:text-sm mt-0.5 sm:mt-1">رصد فوق‌سریع شاخص‌ها و OKR (متصل به جدول تجمیعی)</p>
                                 </div>
                             </div>
                             <a href="index.html" className="xl:hidden flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl transition-colors text-xs font-bold shrink-0">
@@ -673,464 +791,638 @@
                         </div>
                     </div>
 
+                    {/* Tabs Navigation */}
+                    <div className="flex items-center gap-6 border-b border-slate-200 px-2 relative z-0">
+                        <button 
+                            onClick={() => setActiveTab('dashboard')} 
+                            className={`pb-3 px-1 text-sm font-bold transition-all relative ${activeTab === 'dashboard' ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <i className="fa-solid fa-chart-pie ml-1.5"></i> داشبورد عملکرد
+                            {activeTab === 'dashboard' && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-brand-500 rounded-t-md"></span>}
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('okr')} 
+                            className={`pb-3 px-1 text-sm font-bold transition-all relative ${activeTab === 'okr' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <i className="fa-solid fa-bullseye ml-1.5"></i> مدیریت اهداف (OKR)
+                            {activeTab === 'okr' && <span className="absolute bottom-0 left-0 w-full h-[3px] bg-indigo-500 rounded-t-md"></span>}
+                        </button>
+                    </div>
+
                     {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200"><i className="fa-solid fa-triangle-exclamation ml-2"></i>خطا: {error}</div>}
 
-                    {/* Section 1: Overview & Sales */}
-                    <div>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2">
-                            <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
-                            مرور کلی تقاضا، فروش و کاربران
-                        </h2>
-                        
-                        <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
-                            
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-pink-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-user-plus ml-1"></i> کاربران جدید</h4>
-                                    <span className="font-en font-black text-pink-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalNewUsers)}</span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">مشتری</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">
-                                        {isLoading ? '...' : (
-                                            <>
-                                                {formatNumber(stats?.newCustomers)}
-                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.customers)})</span>
-                                            </>
-                                        )}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کننده</span>
-                                    <span className="font-en font-bold text-pink-600 text-sm">
-                                        {isLoading ? '...' : (
-                                            <>
-                                                {formatNumber(stats?.newSuppliers)}
-                                                <span className="text-[10px] text-pink-400/70 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.suppliers)})</span>
-                                            </>
-                                        )}
-                                    </span>
-                                </div>
-                            </div>
-                            
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-rose-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-crown ml-1"></i> ویژه و خریداران بار اول</h4>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5" title="کاربرانی که در این دوره اشتراکشان معتبر بوده است">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک‌های فعال</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSubscriptions)}</span>
-                                </div>
-                                <div className="flex justify-between items-center" title="مشتریانی که اولین خرید خود را در این دوره ثبت کرده‌اند">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">خریداران بار اول</span>
-                                    <span className="font-en font-bold text-rose-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newBuyers)}</span>
-                                </div>
-                            </div>
-
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-cyan-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-boxes-packing ml-1"></i> کاتالوگ و قیمت‌گذاری</h4>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5" title="کالاهای جدید اضافه شده به سیستم">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">کالای جدید</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">
-                                        {isLoading ? '...' : (
-                                            <>
-                                                {formatNumber(stats?.updatedProducts)}
-                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.products)})</span>
-                                            </>
-                                        )}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5" title="تعداد کالاهایی که قیمتشان آپدیت شده">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تنوع کالای آپدیت‌شده</span>
-                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.updatedProducts)}</span>
-                                </div>
-                                <div className="flex justify-between items-center" title="تعداد تامین‌کنندگانی که قیمت اعلام کرده‌اند">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کنندگان فعال</span>
-                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSuppliersPriced)}</span>
-                                </div>
-                            </div>
-                            
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-blue-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-file-lines ml-1"></i> کل تقاضا</h4>
-                                    <span className="font-en font-black text-blue-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalDemands)}</span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsNormal)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
-                                    <span className="font-en font-bold text-blue-600 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsSub)}</span>
-                                </div>
-                            </div>
-
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-bag-shopping ml-1"></i> فاکتورها (فروش)</h4>
-                                    <span className="font-en font-black text-emerald-600 text-lg">{isLoading ? '...' : formatNumber(stats?.salesCount)}</span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به عادی</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[9px] text-slate-400 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceNormal?.toFixed(1)}</span>)</span>
-                                        <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
-                                    </div>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به ویژه</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[9px] text-emerald-400/80 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceSub?.toFixed(1)}</span>)</span>
-                                        <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-indigo-400 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-headset ml-1"></i> پیگیری و تماس</h4>
-                                    <span className="font-en font-black text-indigo-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalFollowups)}</span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsNormal)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با اشتراکی</span>
-                                    <span className="font-en font-bold text-indigo-600 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsSub)}</span>
-                                </div>
-                            </div>
-
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-teal-500 w-full">
-                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-money-bill-trend-up ml-1"></i> مجموع فروش (GMV)</h4>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvNormal)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV ویژه</span>
-                                    <span className="font-en font-bold text-teal-600 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvSub)}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* NEW Section: Product Diversity & Cart Penetration */}
-                    <div>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
-                            <span className="bg-sky-100 text-sky-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
-                            تنوع کالایی و بررسی نفوذ در سبد مشتری
-                        </h2>
-                        
-                        <div className="glass-card rounded-2xl p-6 fade-in border-r-4 border-r-sky-500 w-full mb-8">
-                            <p className="text-[11px] text-slate-500 mb-6 text-center md:text-right font-medium">بررسی تعداد کالاهای **یکتا** (Unique Products) که در این بازه زمانی توسط مشتریان درخواست شده و کالاهایی که در نهایت فروخته شده‌اند.</p>
-                            
-                            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
-                                {/* Step 1: Requested Diversity */}
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-slate-50 text-slate-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
-                                        <i className="fa-solid fa-clipboard-list"></i>
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-700">تنوع کالای درخواستی</span>
-                                    <div className="flex flex-col items-center mt-1">
-                                        <span className="font-en font-black text-xl text-slate-800">
-                                            {isLoading ? '...' : formatNumber(stats?.diversityRequested)}
-                                        </span>
-                                        <div className="flex gap-2 mt-1.5 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                                            <span>عادی: <strong className="font-en text-slate-700">{isLoading ? '...' : formatNumber(stats?.diversityRequestedNormal)}</strong></span>
-                                            <span className="text-slate-300">|</span>
-                                            <span>ویژه: <strong className="font-en text-purple-600">{isLoading ? '...' : formatNumber(stats?.diversityRequestedSub)}</strong></span>
+                    {/* ================================== TAB 1: DASHBOARD ================================== */}
+                    {activeTab === 'dashboard' && (
+                        <div className="flex flex-col gap-6 fade-in">
+                            {/* Section 1: Overview & Sales */}
+                            <div>
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2">
+                                    <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
+                                    مرور کلی تقاضا، فروش و کاربران
+                                </h2>
+                                
+                                <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-pink-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-user-plus ml-1"></i> کاربران جدید</h4>
+                                            <span className="font-en font-black text-pink-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalNewUsers)}</span>
                                         </div>
-                                        <span className="text-[10px] text-slate-400 font-normal font-vazir mt-1">(از کل {isLoading ? '...' : formatNumber(overallTotals.products)} کالای سیستم)</span>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">مشتری</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm">
+                                                {isLoading ? '...' : (
+                                                    <>
+                                                        {formatNumber(stats?.newCustomers)}
+                                                        <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.customers)})</span>
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کننده</span>
+                                            <span className="font-en font-bold text-pink-600 text-sm">
+                                                {isLoading ? '...' : (
+                                                    <>
+                                                        {formatNumber(stats?.newSuppliers)}
+                                                        <span className="text-[10px] text-pink-400/70 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.suppliers)})</span>
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
+                                    
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-rose-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-crown ml-1"></i> ویژه و خریداران بار اول</h4>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5" title="کاربرانی که در این دوره اشتراکشان معتبر بوده است">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک‌های فعال</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSubscriptions)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center" title="مشتریانی که اولین خرید خود را در این دوره ثبت کرده‌اند">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">خریداران بار اول</span>
+                                            <span className="font-en font-bold text-rose-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newBuyers)}</span>
+                                        </div>
+                                    </div>
 
-                                <div className="hidden md:flex flex-col items-center px-4">
-                                    <div className="h-0.5 w-16 bg-slate-200 relative">
-                                        <i className="fa-solid fa-caret-left absolute -left-1 -top-2 text-slate-300 text-lg"></i>
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-cyan-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-boxes-packing ml-1"></i> کاتالوگ و قیمت‌گذاری</h4>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5" title="کالاهای جدید اضافه شده به سیستم">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">کالای جدید</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm">
+                                                {isLoading ? '...' : (
+                                                    <>
+                                                        {formatNumber(stats?.updatedProducts)}
+                                                        <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.products)})</span>
+                                                    </>
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5" title="تعداد کالاهایی که قیمتشان آپدیت شده">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">تنوع کالای آپدیت‌شده</span>
+                                            <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.updatedProducts)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center" title="تعداد تامین‌کنندگانی که قیمت اعلام کرده‌اند">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کنندگان فعال</span>
+                                            <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSuppliersPriced)}</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="flex md:hidden flex-col items-center py-2 text-slate-300">
-                                    <i className="fa-solid fa-caret-down text-lg"></i>
-                                </div>
+                                    
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-blue-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-file-lines ml-1"></i> کل تقاضا</h4>
+                                            <span className="font-en font-black text-blue-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalDemands)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsNormal)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                            <span className="font-en font-bold text-blue-600 text-sm">{isLoading ? '...' : formatNumber(stats?.demandsSub)}</span>
+                                        </div>
+                                    </div>
 
-                                {/* Step 2: Sold Diversity */}
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-sky-50 text-sky-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
-                                        <i className="fa-solid fa-box-check"></i>
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-bag-shopping ml-1"></i> فاکتورها (فروش)</h4>
+                                            <span className="font-en font-black text-emerald-600 text-lg">{isLoading ? '...' : formatNumber(stats?.salesCount)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به عادی</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] text-slate-400 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceNormal?.toFixed(1)}</span>)</span>
+                                                <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به ویژه</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] text-emerald-400/80 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceSub?.toFixed(1)}</span>)</span>
+                                                <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <span className="text-sm font-bold text-slate-700">تنوع کالای فروخته شده</span>
-                                    <div className="flex flex-col items-center mt-1">
-                                        <span className="font-en font-black text-xl text-sky-600">
-                                            {isLoading ? '...' : formatNumber(stats?.diversitySold)}
-                                        </span>
-                                        <div className="flex gap-2 mt-1.5 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
-                                            <span>عادی: <strong className="font-en text-sky-700">{isLoading ? '...' : formatNumber(stats?.diversitySoldNormal)}</strong></span>
-                                            <span className="text-sky-200">|</span>
-                                            <span>ویژه: <strong className="font-en text-emerald-600">{isLoading ? '...' : formatNumber(stats?.diversitySoldSub)}</strong></span>
+
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-indigo-400 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-headset ml-1"></i> پیگیری و تماس</h4>
+                                            <span className="font-en font-black text-indigo-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalFollowups)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">با عادی</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsNormal)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">با اشتراکی</span>
+                                            <span className="font-en font-bold text-indigo-600 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsSub)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-teal-500 w-full">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                            <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-money-bill-trend-up ml-1"></i> مجموع فروش (GMV)</h4>
+                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV عادی</span>
+                                            <span className="font-en font-bold text-slate-800 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvNormal)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV ویژه</span>
+                                            <span className="font-en font-bold text-teal-600 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvSub)}</span>
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* Conversion Result */}
-                                <div className="w-full md:w-auto mt-6 md:mt-0 md:mr-8 bg-sky-50 p-5 rounded-2xl border border-sky-100 flex flex-col items-center justify-center flex-1">
-                                    <span className="text-xs font-bold text-sky-700 mb-2 bg-sky-100/50 px-3 py-1 rounded-full">نرخ نفوذ سبد (تبدیل تنوع)</span>
-                                    <span className="font-en font-black text-4xl text-sky-600 tracking-tighter" dir="ltr">
-                                        {isLoading ? '...' : `${stats?.diversityConversion?.toFixed(1)}%`}
-                                    </span>
-                                    <div className="flex gap-2 mt-2 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
-                                        <span>عادی: <strong className="font-en text-sky-700" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionNormal?.toFixed(1)}%`}</strong></span>
-                                        <span className="text-sky-200">|</span>
-                                        <span>ویژه: <strong className="font-en text-emerald-600" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionSub?.toFixed(1)}%`}</strong></span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Section 2: Demand Items & Operations */}
-                    <div>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
-                            <span className="bg-purple-100 text-purple-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-boxes-stacked"></i></span>
-                            وضعیت کل اقلام تقاضا (تعداد رکوردها)
-                        </h2>
-                        
-                        <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
-                            <KpiBox title="تعداد کل اقلام تقاضا" value={formatNumber(stats?.totalItems)} icon="fa-box" color="purple" isLoading={isLoading} />
-                            
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-purple-400 w-full">
-                                <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">تفکیک اقلام (عادی / ویژه)</h4>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsNormal)}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
-                                    <span className="font-en font-bold text-purple-600 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsSub)}</span>
-                                </div>
                             </div>
 
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
-                                <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">درصد تامین موفق اقلام</h4>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateNormal?.toFixed(1)}%`}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
-                                    <span className="font-en font-bold text-emerald-600 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateSub?.toFixed(1)}%`}</span>
-                                </div>
-                            </div>
-
-                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-amber-400 w-full">
-                                <h4 className="text-slate-500 text-xs font-semibold mb-3">زمان‌سنجی عملکرد</h4>
-                                <div className="grid grid-cols-[auto_1fr_1fr] gap-x-2 gap-y-2 items-center text-center">
-                                    <div></div>
-                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا پاسخ</div>
-                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا تامین</div>
+                            {/* Section 2: Product Diversity & Cart Penetration */}
+                            <div>
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                                    <span className="bg-sky-100 text-sky-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
+                                    تنوع کالایی و بررسی نفوذ در سبد مشتری
+                                </h2>
+                                
+                                <div className="glass-card rounded-2xl p-6 border-r-4 border-r-sky-500 w-full mb-8">
+                                    <p className="text-[11px] text-slate-500 mb-6 text-center md:text-right font-medium">بررسی تعداد کالاهای **یکتا** (Unique Products) که در این بازه زمانی توسط مشتریان درخواست شده و کالاهایی که در نهایت فروخته شده‌اند.</p>
                                     
-                                    <div className="text-[11px] font-medium text-slate-600 text-right pr-1">عادی</div>
-                                    <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
-                                    <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
+                                        <div className="flex flex-col items-center text-center">
+                                            <div className="w-16 h-16 bg-slate-50 text-slate-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                                <i className="fa-solid fa-clipboard-list"></i>
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-700">تنوع کالای درخواستی</span>
+                                            <div className="flex flex-col items-center mt-1">
+                                                <span className="font-en font-black text-xl text-slate-800">
+                                                    {isLoading ? '...' : formatNumber(stats?.diversityRequested)}
+                                                </span>
+                                                <div className="flex gap-2 mt-1.5 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                    <span>عادی: <strong className="font-en text-slate-700">{isLoading ? '...' : formatNumber(stats?.diversityRequestedNormal)}</strong></span>
+                                                    <span className="text-slate-300">|</span>
+                                                    <span>ویژه: <strong className="font-en text-purple-600">{isLoading ? '...' : formatNumber(stats?.diversityRequestedSub)}</strong></span>
+                                                </div>
+                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mt-1">(از کل {isLoading ? '...' : formatNumber(overallTotals.products)} کالای سیستم)</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="hidden md:flex flex-col items-center px-4">
+                                            <div className="h-0.5 w-16 bg-slate-200 relative">
+                                                <i className="fa-solid fa-caret-left absolute -left-1 -top-2 text-slate-300 text-lg"></i>
+                                            </div>
+                                        </div>
+                                        <div className="flex md:hidden flex-col items-center py-2 text-slate-300">
+                                            <i className="fa-solid fa-caret-down text-lg"></i>
+                                        </div>
+
+                                        <div className="flex flex-col items-center text-center">
+                                            <div className="w-16 h-16 bg-sky-50 text-sky-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                                <i className="fa-solid fa-box-check"></i>
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-700">تنوع کالای فروخته شده</span>
+                                            <div className="flex flex-col items-center mt-1">
+                                                <span className="font-en font-black text-xl text-sky-600">
+                                                    {isLoading ? '...' : formatNumber(stats?.diversitySold)}
+                                                </span>
+                                                <div className="flex gap-2 mt-1.5 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
+                                                    <span>عادی: <strong className="font-en text-sky-700">{isLoading ? '...' : formatNumber(stats?.diversitySoldNormal)}</strong></span>
+                                                    <span className="text-sky-200">|</span>
+                                                    <span>ویژه: <strong className="font-en text-emerald-600">{isLoading ? '...' : formatNumber(stats?.diversitySoldSub)}</strong></span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="w-full md:w-auto mt-6 md:mt-0 md:mr-8 bg-sky-50 p-5 rounded-2xl border border-sky-100 flex flex-col items-center justify-center flex-1">
+                                            <span className="text-xs font-bold text-sky-700 mb-2 bg-sky-100/50 px-3 py-1 rounded-full">نرخ نفوذ سبد (تبدیل تنوع)</span>
+                                            <span className="font-en font-black text-4xl text-sky-600 tracking-tighter" dir="ltr">
+                                                {isLoading ? '...' : `${stats?.diversityConversion?.toFixed(1)}%`}
+                                            </span>
+                                            <div className="flex gap-2 mt-2 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
+                                                <span>عادی: <strong className="font-en text-sky-700" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionNormal?.toFixed(1)}%`}</strong></span>
+                                                <span className="text-sky-200">|</span>
+                                                <span>ویژه: <strong className="font-en text-emerald-600" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionSub?.toFixed(1)}%`}</strong></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 3: Demand Items & Operations */}
+                            <div>
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                                    <span className="bg-purple-100 text-purple-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-boxes-stacked"></i></span>
+                                    وضعیت کل اقلام تقاضا (تعداد رکوردها)
+                                </h2>
+                                
+                                <div className="mobile-box-grid sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                                    <KpiBox title="تعداد کل اقلام تقاضا" value={formatNumber(stats?.totalItems)} icon="fa-box" color="purple" isLoading={isLoading} />
                                     
-                                    <div className="text-[11px] font-medium text-purple-600 text-right pr-1">ویژه</div>
-                                    <div className="text-[12px] font-en font-bold text-purple-700 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-purple-400 ml-0.5 font-normal">h</span></div>
-                                    <div className="text-[12px] font-en font-bold text-emerald-600 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-emerald-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-purple-400 w-full">
+                                        <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">تفکیک اقلام (عادی / ویژه)</h4>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsNormal)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                            <span className="font-en font-bold text-purple-600 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.itemsSub)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
+                                        <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">درصد تامین موفق اقلام</h4>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                            <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateNormal?.toFixed(1)}%`}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                            <span className="font-en font-bold text-emerald-600 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateSub?.toFixed(1)}%`}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-card rounded-2xl p-4 flex flex-col justify-center border-r-4 border-r-amber-400 w-full">
+                                        <h4 className="text-slate-500 text-xs font-semibold mb-3">زمان‌سنجی عملکرد</h4>
+                                        <div className="grid grid-cols-[auto_1fr_1fr] gap-x-2 gap-y-2 items-center text-center">
+                                            <div></div>
+                                            <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا پاسخ</div>
+                                            <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا تامین</div>
+                                            
+                                            <div className="text-[11px] font-medium text-slate-600 text-right pr-1">عادی</div>
+                                            <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                            <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                            
+                                            <div className="text-[11px] font-medium text-purple-600 text-right pr-1">ویژه</div>
+                                            <div className="text-[12px] font-en font-bold text-purple-700 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-purple-400 ml-0.5 font-normal">h</span></div>
+                                            <div className="text-[12px] font-en font-bold text-emerald-600 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-emerald-400 ml-0.5 font-normal">h</span></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Section 3: Sales Funnel (Conversion) */}
-                    <div>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
-                            <span className="bg-amber-100 text-amber-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-filter-circle-dollar"></i></span>
-                            قیف فروش و تبدیل کل اقلام (Sales Funnel)
-                        </h2>
-                        
-                        <div className="glass-card rounded-2xl p-6 fade-in border-r-4 border-r-amber-500 w-full mb-8">
-                            <p className="text-[11px] text-slate-500 mb-6 text-center md:text-right font-medium">از کل اقلامی که تیم تامین موفق به تهیه آن‌ها شده، چه تعداد در نهایت توسط مشتری در فاکتور پرداخت شده‌اند؟</p>
-                            
-                            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
-                                        <i className="fa-solid fa-box-open"></i>
+                            {/* Section 4: Sales Funnel (Conversion) */}
+                            <div>
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                                    <span className="bg-amber-100 text-amber-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-filter-circle-dollar"></i></span>
+                                    قیف فروش و تبدیل کل اقلام (Sales Funnel)
+                                </h2>
+                                
+                                <div className="glass-card rounded-2xl p-6 border-r-4 border-r-amber-500 w-full mb-8">
+                                    <p className="text-[11px] text-slate-500 mb-6 text-center md:text-right font-medium">از کل اقلامی که تیم تامین موفق به تهیه آن‌ها شده، چه تعداد در نهایت توسط مشتری در فاکتور پرداخت شده‌اند؟</p>
+                                    
+                                    <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
+                                        <div className="flex flex-col items-center text-center">
+                                            <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                                <i className="fa-solid fa-box-open"></i>
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-700">اقلام تامین شده</span>
+                                            <span className="font-en font-black text-xl text-slate-800 mt-1">{isLoading ? '...' : formatNumber(stats?.fulfilledItems)}</span>
+                                        </div>
+
+                                        <div className="hidden md:flex flex-col items-center px-4">
+                                            <div className="h-0.5 w-16 bg-slate-200 relative">
+                                                <i className="fa-solid fa-caret-left absolute -left-1 -top-2 text-slate-300 text-lg"></i>
+                                            </div>
+                                        </div>
+                                        <div className="flex md:hidden flex-col items-center py-2 text-slate-300">
+                                            <i className="fa-solid fa-caret-down text-lg"></i>
+                                        </div>
+
+                                        <div className="flex flex-col items-center text-center">
+                                            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                                <i className="fa-solid fa-file-invoice-dollar"></i>
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-700">اقلام فاکتور شده (فروخته شده)</span>
+                                            <span className="font-en font-black text-xl text-emerald-600 mt-1">{isLoading ? '...' : formatNumber(stats?.soldItems)}</span>
+                                        </div>
+
+                                        <div className="w-full md:w-auto mt-6 md:mt-0 md:mr-8 bg-amber-50 p-5 rounded-2xl border border-amber-100 flex flex-col items-center justify-center flex-1">
+                                            <span className="text-xs font-bold text-amber-700 mb-2 bg-amber-100/50 px-3 py-1 rounded-full">نرخ تبدیل تامین به فروش</span>
+                                            <span className="font-en font-black text-4xl text-amber-600 tracking-tighter" dir="ltr">
+                                                {isLoading ? '...' : `${stats?.funnelConversion?.toFixed(1)}%`}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <span className="text-sm font-bold text-slate-700">اقلام تامین شده</span>
-                                    <span className="font-en font-black text-xl text-slate-800 mt-1">{isLoading ? '...' : formatNumber(stats?.fulfilledItems)}</span>
-                                </div>
-
-                                <div className="hidden md:flex flex-col items-center px-4">
-                                    <div className="h-0.5 w-16 bg-slate-200 relative">
-                                        <i className="fa-solid fa-caret-left absolute -left-1 -top-2 text-slate-300 text-lg"></i>
-                                    </div>
-                                </div>
-                                <div className="flex md:hidden flex-col items-center py-2 text-slate-300">
-                                    <i className="fa-solid fa-caret-down text-lg"></i>
-                                </div>
-
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-2xl mb-3 shadow-inner">
-                                        <i className="fa-solid fa-file-invoice-dollar"></i>
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-700">اقلام فاکتور شده (فروخته شده)</span>
-                                    <span className="font-en font-black text-xl text-emerald-600 mt-1">{isLoading ? '...' : formatNumber(stats?.soldItems)}</span>
-                                </div>
-
-                                <div className="w-full md:w-auto mt-6 md:mt-0 md:mr-8 bg-amber-50 p-5 rounded-2xl border border-amber-100 flex flex-col items-center justify-center flex-1">
-                                    <span className="text-xs font-bold text-amber-700 mb-2 bg-amber-100/50 px-3 py-1 rounded-full">نرخ تبدیل تامین به فروش</span>
-                                    <span className="font-en font-black text-4xl text-amber-600 tracking-tighter" dir="ltr">
-                                        {isLoading ? '...' : `${stats?.funnelConversion?.toFixed(1)}%`}
-                                    </span>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Section 4: Alerts & Warnings */}
-                    <div>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
-                            <span className="bg-red-100 text-red-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-bell"></i></span>
-                            هشدارهای سیستم (نیازمند پیگیری)
-                        </h2>
-                        
-                        <div className="glass-card rounded-2xl p-0 overflow-hidden fade-in border-r-4 border-r-red-500 w-full mb-8">
-                            <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                <div>
-                                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                        تقاضاهای بدون اقدام و معطل (بیش از ۴۸ ساعت کاری)
-                                    </h3>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        تقاضاهایی که بیش از ۴۸ ساعت کاری (بدون احتساب روزهای جمعه) از ثبت آن‌ها گذشته و هیچ عملیاتی روی آن‌ها انجام نشده است.
-                                    </p>
+                            {/* Section 5: Alerts & Warnings */}
+                            <div>
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2 mt-4">
+                                    <span className="bg-red-100 text-red-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-bell"></i></span>
+                                    هشدارهای سیستم (نیازمند پیگیری)
+                                </h2>
+                                
+                                <div className="glass-card rounded-2xl p-0 overflow-hidden border-r-4 border-r-red-500 w-full mb-8">
+                                    <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                                تقاضاهای بدون اقدام و معطل (بیش از ۴۸ ساعت کاری)
+                                            </h3>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                تقاضاهایی که بیش از ۴۸ ساعت کاری (بدون احتساب روزهای جمعه) از ثبت آن‌ها گذشته و هیچ عملیاتی روی آن‌ها انجام نشده است.
+                                            </p>
+                                        </div>
+                                        
+                                        <div className="flex bg-slate-100 p-1 rounded-xl shrink-0 self-end sm:self-auto">
+                                            <button 
+                                                onClick={() => setUnactedTab('period')}
+                                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'period' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                در این دوره ({isLoading ? '...' : unactedData.period.length})
+                                            </button>
+                                            <button 
+                                                onClick={() => setUnactedTab('overall')}
+                                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'overall' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                کل سیستم ({isLoading ? '...' : unactedData.overall.length})
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="max-h-[300px] overflow-y-auto p-4 sm:p-5 bg-slate-50/50">
+                                        {isLoading ? (
+                                            <div className="text-center py-8 text-slate-400">در حال بررسی...</div>
+                                        ) : unactedData[unactedTab].length === 0 ? (
+                                            <div className="text-center py-8 text-slate-400">
+                                                <i className="fa-solid fa-check-circle text-3xl mb-2 text-emerald-400"></i>
+                                                <p className="text-sm">همه تقاضاهای موجود در این لیست بررسی شده‌اند و پرونده بازِ معطلی وجود ندارد.</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                                    {unactedData[unactedTab].slice(0, 60).map(d => {
+                                                        const profile = d.customerProfile;
+                                                        
+                                                        const fName = profile?.first_name || profile?.firstname || profile?.name || '';
+                                                        const lName = profile?.last_name || profile?.lastname || profile?.surname || profile?.family_name || profile?.familyname || '';
+                                                        let fullName = profile?.full_name || profile?.fullname || `${fName} ${lName}`.trim();
+                                                        
+                                                        if (!fullName && profile?.raw_user_meta_data) {
+                                                            const meta = typeof profile.raw_user_meta_data === 'string' ? JSON.parse(profile.raw_user_meta_data) : profile.raw_user_meta_data;
+                                                            const mFName = meta?.first_name || meta?.name || '';
+                                                            const mLName = meta?.last_name || meta?.surname || meta?.family_name || '';
+                                                            fullName = meta?.full_name || `${mFName} ${mLName}`.trim();
+                                                        }
+                                                        
+                                                        if (!fullName || fullName.trim() === '') fullName = 'مشتری نامشخص';
+                                                        
+                                                        let cityName = profile?.city || profile?.city_name || profile?.cityname || profile?.province || profile?.city_id || '';
+                                                        const cityText = cityName ? `(${cityName})` : '';
+
+                                                        const gDate = new Date(d.createdat);
+                                                        const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                                                        const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+                                                        const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
+                                                        const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
+                                                        
+                                                        return (
+                                                            <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{String(d.id).substring(0, 8)}</span></span>
+                                                                    {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
+                                                                </div>
+                                                                
+                                                                <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                                                                    <i className="fa-solid fa-user-circle text-slate-400 text-[14px]"></i> 
+                                                                    <span className="truncate">{fullName} <span className="text-slate-500 font-normal">{cityText}</span></span>
+                                                                </div>
+
+                                                                <div className="flex justify-between items-center mt-2">
+                                                                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                                        <i className="fa-regular fa-clock"></i> {dateStr}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
+                                                                        <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {unactedData[unactedTab].length > 60 && (
+                                                    <div className="mt-4 bg-white/50 border border-slate-200 border-dashed rounded-xl p-3 flex items-center justify-center text-slate-500 text-xs font-bold shadow-sm">
+                                                        و {formatNumber(unactedData[unactedTab].length - 60)} مورد دیگر ...
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 6: Charts Area */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                                <div className="lg:col-span-2 glass-card rounded-2xl p-4 sm:p-5">
+                                    <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-4 sm:mb-6">روند تقاضا و اقلام در این دوره</h3>
+                                    <div className="h-[250px] sm:h-[300px] w-full" dir="ltr">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                                                <defs>
+                                                    <linearGradient id="cItems" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
+                                                    <linearGradient id="cDemand" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                                <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', fontFamily: 'Vazirmatn', textAlign: 'right', fontSize: '12px'}} />
+                                                <Legend wrapperStyle={{fontSize: '11px', fontFamily: 'Vazirmatn', paddingTop: '10px'}} />
+                                                <Area type="monotone" name="اقلام (Items)" dataKey="کل اقلام" stroke="#a855f7" strokeWidth={2} fill="url(#cItems)" />
+                                                <Area type="monotone" name="تقاضا (Demands)" dataKey="عادی" stroke="#3b82f6" strokeWidth={2} fill="url(#cDemand)" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
                                 </div>
                                 
-                                <div className="flex bg-slate-100 p-1 rounded-xl shrink-0 self-end sm:self-auto">
-                                    <button 
-                                        onClick={() => setUnactedTab('period')}
-                                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'period' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
-                                    >
-                                        در این دوره ({isLoading ? '...' : unactedData.period.length})
-                                    </button>
-                                    <button 
-                                        onClick={() => setUnactedTab('overall')}
-                                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'overall' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
-                                    >
-                                        کل سیستم ({isLoading ? '...' : unactedData.overall.length})
-                                    </button>
+                                <div className="glass-card rounded-2xl p-4 sm:p-5">
+                                    <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-1">ارزش فروش روزانه (GMV)</h3>
+                                    <div className="h-[200px] sm:h-[250px] w-full" dir="ltr">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                                                <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val) => [formatNumber(val) + ' ت', 'GMV']} contentStyle={{fontSize:'12px', fontFamily:'Vazirmatn', borderRadius:'8px', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.1)'}} />
+                                                <Bar dataKey="GMV" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ================================== TAB 2: OKR MANAGEMENT ================================== */}
+                    {activeTab === 'okr' && (
+                        <div className="flex flex-col gap-6 fade-in mt-2">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <h2 className="text-base sm:text-lg font-bold text-slate-700 flex items-center gap-2">
+                                    <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-bullseye"></i></span>
+                                    مدیریت اهداف کلیدی (OKR)
+                                </h2>
+                                <div className="text-[11px] text-slate-500 bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-100 shadow-sm leading-relaxed">
+                                    <i className="fa-solid fa-circle-info text-indigo-400 ml-1"></i>
+                                    <strong>نکته مهم:</strong> اهداف به صورت <strong>فصلی</strong> تعریف می‌شوند، اما برای رصد دقیق، درصدِ پیشرفت در کارت‌ها بر اساس <strong>فیلتر تاریخ بالای صفحه (مثلاً هفته جاری)</strong> محاسبه می‌شود.
                                 </div>
                             </div>
                             
-                            <div className="max-h-[300px] overflow-y-auto p-4 sm:p-5 bg-slate-50/50">
-                                {isLoading ? (
-                                    <div className="text-center py-8 text-slate-400">در حال بررسی...</div>
-                                ) : unactedData[unactedTab].length === 0 ? (
-                                    <div className="text-center py-8 text-slate-400">
-                                        <i className="fa-solid fa-check-circle text-3xl mb-2 text-emerald-400"></i>
-                                        <p className="text-sm">همه تقاضاهای موجود در این لیست بررسی شده‌اند و پرونده بازِ معطلی وجود ندارد.</p>
+                            {/* OKR Creation Form */}
+                            <div className="glass-card rounded-2xl p-5 border-t-4 border-t-indigo-500 relative">
+                                {isSubmittingOkr && (
+                                    <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
+                                        <div className="flex items-center gap-2 text-indigo-600 font-bold bg-white px-4 py-2 rounded-xl shadow-md">
+                                            <i className="fa-solid fa-circle-notch fa-spin"></i> در حال محاسبه نقطه شروع...
+                                        </div>
+                                    </div>
+                                )}
+                                <h3 className="text-sm font-bold text-slate-700 mb-4">تعریف هدف جدید</h3>
+                                <form onSubmit={handleAddOkr} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 items-end">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-slate-500 font-bold">سال</label>
+                                        <select value={okrYear} onChange={e => setOkrYear(Number(e.target.value))} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-en focus:outline-none focus:border-brand-400 cursor-pointer">
+                                            <option value={1403}>1403</option><option value={1404}>1404</option><option value={1405}>1405</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-slate-500 font-bold">فصل هدف</label>
+                                        <select value={okrSeason} onChange={e => setOkrSeason(Number(e.target.value))} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400 cursor-pointer">
+                                            <option value={1}>بهار</option>
+                                            <option value={2}>تابستان</option>
+                                            <option value={3}>پاییز</option>
+                                            <option value={4}>زمستان</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-slate-500 font-bold">شاخص کلیدی (KR)</label>
+                                        <select value={newOkrMetric} onChange={e => setNewOkrMetric(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400 cursor-pointer">
+                                            {AVAILABLE_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-slate-500 font-bold">نوع هدف‌گذاری</label>
+                                        <select value={newOkrTargetType} onChange={e => setNewOkrTargetType(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400 cursor-pointer">
+                                            <option value="weekly_growth">رشد هفتگی (مبنا: هفته اول)</option>
+                                            <option value="cumulative">تجمعی (مجموع کل فصل)</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-xs text-slate-500 font-bold">مسئول (Owner)</label>
+                                        <input type="text" value={newOkrOwner} onChange={e => setNewOkrOwner(e.target.value)} placeholder="مثال: تیم فروش" required className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400" />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 relative">
+                                        <label className="text-xs text-slate-500 font-bold">هدف (Target)</label>
+                                        <input type="number" step="any" value={newOkrTarget} onChange={e => setNewOkrTarget(e.target.value)} placeholder="مقدار هدف" required className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-en focus:outline-none focus:border-brand-400" />
+                                    </div>
+                                    <button type="submit" disabled={isSubmittingOkr} className="xl:col-span-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-sm py-2.5 px-4 rounded-xl transition-colors h-[42px] flex items-center justify-center gap-2 shadow-sm">
+                                        <i className="fa-solid fa-plus"></i> {isSubmittingOkr ? 'در حال ثبت...' : 'ثبت هدف و محاسبه'}
+                                    </button>
+                                </form>
+                                <div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                    <i className="fa-solid fa-robot"></i> 
+                                    <span>نقطه شروع (Baseline) به صورت خودکار از دیتابیس استخراج می‌شود. برای اهداف «تجمعی» نقطه شروع صفر در نظر گرفته می‌شود و برای «رشد هفتگی» مقدارِ عملکرد در اولین هفته‌ی فصل محاسبه خواهد شد.</span>
+                                </div>
+                            </div>
+
+                            {/* Active OKRs Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                {currentYearOkrs.length === 0 ? (
+                                    <div className="col-span-full py-12 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                                        <i className="fa-solid fa-flag-checkered text-4xl mb-3 text-slate-300"></i>
+                                        <p>هیچ هدفی برای سال {selectedYear} ثبت نشده است.</p>
+                                        <p className="text-xs mt-2 text-slate-400">با استفاده از فرم بالا می‌توانید شاخص‌ها را برای فصول مختلف هدف‌گذاری کنید.</p>
                                     </div>
                                 ) : (
-                                    <>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                            {unactedData[unactedTab].slice(0, 60).map(d => {
-                                                const profile = d.customerProfile;
-                                                
-                                                const fName = profile?.first_name || profile?.firstname || profile?.name || '';
-                                                const lName = profile?.last_name || profile?.lastname || profile?.surname || profile?.family_name || profile?.familyname || '';
-                                                let fullName = profile?.full_name || profile?.fullname || `${fName} ${lName}`.trim();
-                                                
-                                                if (!fullName && profile?.raw_user_meta_data) {
-                                                    const meta = typeof profile.raw_user_meta_data === 'string' ? JSON.parse(profile.raw_user_meta_data) : profile.raw_user_meta_data;
-                                                    const mFName = meta?.first_name || meta?.name || '';
-                                                    const mLName = meta?.last_name || meta?.surname || meta?.family_name || '';
-                                                    fullName = meta?.full_name || `${mFName} ${mLName}`.trim();
-                                                }
-                                                
-                                                if (!fullName || fullName.trim() === '') fullName = 'مشتری نامشخص';
-                                                
-                                                let cityName = profile?.city || profile?.city_name || profile?.cityname || profile?.province || profile?.city_id || '';
-                                                const cityText = cityName ? `(${cityName})` : '';
+                                    currentYearOkrs.sort((a,b) => a.season - b.season).map(okr => {
+                                        const currentVal = stats?.[okr.metricKey] || 0;
+                                        let rawProgress = 0;
+                                        
+                                        // Calculate progress based on target direction (increase or decrease)
+                                        if (okr.target > okr.baseline) {
+                                            rawProgress = ((currentVal - okr.baseline) / (okr.target - okr.baseline)) * 100;
+                                        } else if (okr.target < okr.baseline) {
+                                            rawProgress = ((okr.baseline - currentVal) / (okr.baseline - okr.target)) * 100;
+                                        } else {
+                                            rawProgress = currentVal >= okr.target ? 100 : 0;
+                                        }
+                                        
+                                        const progressPercent = Math.max(0, Math.min(100, rawProgress));
+                                        const isSuccess = rawProgress >= 100;
 
-                                                const gDate = new Date(d.createdat);
-                                                const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
-                                                const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-                                                const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
-                                                const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
+                                        return (
+                                            <div key={okr.id} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                                <div className={`absolute top-0 right-0 w-1.5 h-full transition-colors ${isSuccess ? 'bg-emerald-400' : 'bg-indigo-400'}`}></div>
                                                 
-                                                return (
-                                                    <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{String(d.id).substring(0, 8)}</span></span>
-                                                            {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
+                                                <div className="flex justify-between items-start mb-3 pl-2">
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200">فصل {seasonNames[okr.season]}</span>
+                                                            <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200">
+                                                                {okr.targetType === 'cumulative' ? 'تجمعی' : 'رشد هفتگی'}
+                                                            </span>
+                                                            {okr.owner && (
+                                                                <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md font-bold border border-indigo-100 flex items-center gap-1">
+                                                                    <i className="fa-solid fa-user-tie"></i> {okr.owner}
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                        
-                                                        <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                                                            <i className="fa-solid fa-user-circle text-slate-400 text-[14px]"></i> 
-                                                            <span className="truncate">{fullName} <span className="text-slate-500 font-normal">{cityText}</span></span>
-                                                        </div>
-
-                                                        <div className="flex justify-between items-center mt-2">
-                                                            <div className="text-[10px] text-slate-500 flex items-center gap-1">
-                                                                <i className="fa-regular fa-clock"></i> {dateStr}
-                                                            </div>
-                                                            <div className="text-[10px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
-                                                                <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
-                                                            </div>
-                                                        </div>
+                                                        <h4 className="font-bold text-slate-700 text-sm">{AVAILABLE_METRICS.find(m => m.key === okr.metricKey)?.label || okr.metricKey}</h4>
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                        {unactedData[unactedTab].length > 60 && (
-                                            <div className="mt-4 bg-white/50 border border-slate-200 border-dashed rounded-xl p-3 flex items-center justify-center text-slate-500 text-xs font-bold shadow-sm">
-                                                و {formatNumber(unactedData[unactedTab].length - 60)} مورد دیگر ...
+                                                    <button onClick={() => setOkrs(okrs.filter(o => o.id !== okr.id))} className="text-slate-300 hover:text-red-500 transition-colors" title="حذف این هدف">
+                                                        <i className="fa-solid fa-trash text-sm"></i>
+                                                    </button>
+                                                </div>
+
+                                                <div className="flex items-center justify-between mb-2 mt-4">
+                                                    <span className="text-[10px] text-slate-400 font-bold">وضعیت پیشرفت</span>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isSuccess ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                                        {rawProgress.toFixed(1)}% محقق شده
+                                                    </span>
+                                                </div>
+
+                                                {/* Progress Bar */}
+                                                <div className="w-full bg-slate-100 rounded-full h-2.5 mb-3 overflow-hidden">
+                                                    <div className={`${isSuccess ? 'bg-emerald-400' : 'bg-indigo-500'} h-full rounded-full transition-all duration-1000 ease-out`} style={{ width: `${progressPercent}%` }}></div>
+                                                </div>
+
+                                                <div className="flex justify-between text-[11px] font-en font-semibold">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-slate-400 mb-0.5 font-vazir" title={okr.targetType === 'cumulative' ? 'مقدار اولیه صفر در نظر گرفته می‌شود' : 'مقدار محاسبه شده برای هفته اول این فصل'}>
+                                                            {okr.targetType === 'cumulative' ? 'شروع' : 'مبنا (هفته ۱)'}
+                                                        </span>
+                                                        <span className="text-slate-600">{formatOkrValue(okr.baseline, okr.metricKey)}</span>
+                                                    </div>
+                                                    <div className="flex flex-col text-center">
+                                                        <span className="text-slate-400 mb-0.5 font-vazir" title="ارزش این شاخص در بازه زمانی که از بالای صفحه فیلتر کرده‌اید">وضعیت فعلی</span>
+                                                        <span className={`text-sm ${isSuccess ? 'text-emerald-600 font-black' : 'text-indigo-600 font-bold'}`}>{formatOkrValue(currentVal, okr.metricKey)}</span>
+                                                    </div>
+                                                    <div className="flex flex-col text-left">
+                                                        <span className="text-slate-400 mb-0.5 font-vazir">هدف</span>
+                                                        <span className="text-slate-700">{formatOkrValue(okr.target, okr.metricKey)}</span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        )}
-                                    </>
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
-                    </div>
-
-                    {/* Charts Area */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-                        <div className="lg:col-span-2 glass-card rounded-2xl p-4 sm:p-5 fade-in">
-                            <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-4 sm:mb-6">روند تقاضا و اقلام در این دوره</h3>
-                            <div className="h-[250px] sm:h-[300px] w-full" dir="ltr">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                                        <defs>
-                                            <linearGradient id="cItems" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
-                                            <linearGradient id="cDemand" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                        <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                                        <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', fontFamily: 'Vazirmatn', textAlign: 'right', fontSize: '12px'}} />
-                                        <Legend wrapperStyle={{fontSize: '11px', fontFamily: 'Vazirmatn', paddingTop: '10px'}} />
-                                        <Area type="monotone" name="اقلام (Items)" dataKey="کل اقلام" stroke="#a855f7" strokeWidth={2} fill="url(#cItems)" />
-                                        <Area type="monotone" name="تقاضا (Demands)" dataKey="عادی" stroke="#3b82f6" strokeWidth={2} fill="url(#cDemand)" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                        
-                        <div className="glass-card rounded-2xl p-4 sm:p-5 fade-in">
-                            <h3 className="text-xs sm:text-sm font-bold text-slate-700 mb-1">ارزش فروش روزانه (GMV)</h3>
-                            <div className="h-[200px] sm:h-[250px] w-full" dir="ltr">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                                        <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val) => [formatNumber(val) + ' ت', 'GMV']} contentStyle={{fontSize:'12px', fontFamily:'Vazirmatn', borderRadius:'8px', border:'none', boxShadow:'0 4px 10px rgba(0,0,0,0.1)'}} />
-                                        <Bar dataKey="GMV" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-
+                    )}
                 </div>
             );
         };
