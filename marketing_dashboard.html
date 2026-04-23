@@ -204,7 +204,9 @@
                     try {
                         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
                         if (sessionError || !session) {
-                            window.location.href = 'index.html';
+                            // window.location.href = 'index.html';
+                            // To prevent loop when testing
+                            setIsAuthorized(false);
                             return;
                         }
 
@@ -216,13 +218,17 @@
 
                         if (profileError || !profile || profile.roleid !== ADMIN_ROLE_ID) {
                             alert('شما دسترسی لازم برای مشاهده این داشبورد را ندارید.');
-                            window.location.href = 'index.html';
+                            // window.location.href = 'index.html';
+                            // To prevent loop when testing
+                            setIsAuthorized(false);
                             return;
                         }
 
                         setIsAuthorized(true);
                     } catch (err) {
-                        window.location.href = 'index.html';
+                        // window.location.href = 'index.html';
+                        // To prevent loop when testing
+                        setIsAuthorized(false);
                     } finally {
                         setAuthLoading(false);
                     }
@@ -231,7 +237,8 @@
                 verifyAuth();
 
                 const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-                    if (event === 'SIGNED_OUT') window.location.href = 'index.html';
+                    // if (event === 'SIGNED_OUT') window.location.href = 'index.html';
+                    if (event === 'SIGNED_OUT') setIsAuthorized(false);
                 });
 
                 return () => {
@@ -456,6 +463,16 @@
 
                 fetchPeriodData();
             }, [selectedYear, filterType, selectedPeriod, isAuthorized]);
+
+            // Charts Formatting
+            const chartData = dbData.map(d => ({
+                name: d.name,
+                'عادی': d['عادی'],
+                'اشتراکی': d['اشتراکی'],
+                'GMV': d['GMV'],
+                'کل اقلام': d['کل اقلام'],
+                'اقلام تامین شده': d['اقلام تامین شده']
+            }));
 
             // --- Show Loading While Checking Auth ---
             if (authLoading) {
