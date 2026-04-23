@@ -434,6 +434,12 @@
 
                         setOverallTotals({ customers: latestCust, suppliers: latestSupp, products: latestProd });
 
+                        // محاسبات دقیق و تفکیک شده جدید
+                        const soldItemsNormalCount = sum('sold_items_normal') || sum('fulfilled_items_normal'); // fallback
+                        const soldItemsSubCount = sum('sold_items_sub') || sum('fulfilled_items_sub'); // fallback
+                        const salesNormalCount = sum('sales_normal');
+                        const salesSubCount = sum('sales_sub');
+
                         setStats({
                             newCustomers: sum('new_customers'),
                             newSuppliers: sum('new_suppliers'),
@@ -446,8 +452,8 @@
                             followupsNormal: sum('followups_normal'),
                             followupsSub: sum('followups_sub'),
                             salesCount: sum('sales_count'),
-                            salesNormal: sum('sales_normal'),
-                            salesSub: sum('sales_sub'),
+                            salesNormal: salesNormalCount,
+                            salesSub: salesSubCount,
                             gmv: sum('total_gmv'),
                             gmvNormal: sum('gmv_normal'), 
                             gmvSub: sum('gmv_sub'),
@@ -464,10 +470,17 @@
                             diversityRequestedSub: sum('unique_products_requested_sub'),
                             diversitySoldNormal: sum('unique_products_sold_normal'),
                             diversitySoldSub: sum('unique_products_sold_sub'),
+                            // Conversions
                             fulfillmentRateNormal: sum('items_normal') > 0 ? (sum('fulfilled_items_normal') / sum('items_normal')) * 100 : 0, 
                             fulfillmentRateSub: sum('items_sub') > 0 ? (sum('fulfilled_items_sub') / sum('items_sub')) * 100 : 0,
                             funnelConversion: sum('fulfilled_items') > 0 ? (sum('sold_items') / sum('fulfilled_items')) * 100 : 0,
                             diversityConversion: sum('unique_products_requested') > 0 ? (sum('unique_products_sold') / sum('unique_products_requested')) * 100 : 0,
+                            diversityConversionNormal: sum('unique_products_requested_normal') > 0 ? (sum('unique_products_sold_normal') / sum('unique_products_requested_normal')) * 100 : 0,
+                            diversityConversionSub: sum('unique_products_requested_sub') > 0 ? (sum('unique_products_sold_sub') / sum('unique_products_requested_sub')) * 100 : 0,
+                            // Averages
+                            avgItemsPerInvoiceNormal: salesNormalCount > 0 ? soldItemsNormalCount / salesNormalCount : 0,
+                            avgItemsPerInvoiceSub: salesSubCount > 0 ? soldItemsSubCount / salesSubCount : 0,
+                            // Delays
                             responseDelayAvgNormal: avg('response_delay_hours_normal'),
                             responseDelayAvgSub: avg('response_delay_hours_sub'),
                             fulfillmentDelayAvgNormal: avg('fulfillment_delay_hours_normal'),
@@ -484,7 +497,7 @@
                         const now = new Date();
                         const { data: allRecentDemands } = await supabase
                             .from('demand')
-                            .select('id, createdat, is_emergency')
+                            .select('id, createdat, is_emergency, customeruserid')
                             .eq('isdeleted', false)
                             .lte('createdat', now.toISOString())
                             .order('createdat', { ascending: false })
@@ -527,6 +540,29 @@
                         }
 
                         allUnactedOverall.sort((a, b) => new Date(a.createdat) - new Date(b.createdat));
+                        
+                        // واکشی نام و شهر کاربران مربوط به تقاضاهای معطل
+                        const unactedUserIds = [...new Set(allUnactedOverall.map(d => d.customeruserid).filter(Boolean))];
+                        const unactedProfilesMap = {};
+                        if (unactedUserIds.length > 0) {
+                            for (let i = 0; i < unactedUserIds.length; i += SAFE_CHUNK_SIZE) {
+                                const chunk = unactedUserIds.slice(i, i + SAFE_CHUNK_SIZE);
+                                const { data: profs } = await supabase
+                                    .from('profiles')
+                                    .select('*')
+                                    .in('id', chunk);
+                                if (profs) {
+                                    profs.forEach(p => {
+                                        unactedProfilesMap[p.id] = p;
+                                    });
+                                }
+                            }
+                        }
+
+                        allUnactedOverall = allUnactedOverall.map(d => ({
+                            ...d,
+                            customerProfile: unactedProfilesMap[d.customeruserid] || null
+                        }));
 
                         const periodStartMs = new Date(startDateFull).getTime();
                         const periodEndMs = new Date(endDateFull).getTime();
@@ -549,7 +585,6 @@
                 fetchPeriodData();
             }, [startGDate, endGDate, isAuthorized]);
 
-            // رفع خطای عدم تعریف chartData در بخش نمودارها
             const chartData = dbData;
 
             // --- Show Loading While Checking Auth ---
@@ -739,11 +774,17 @@
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به عادی</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] text-slate-400 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceNormal?.toFixed(1)}</span>)</span>
+                                        <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
+                                    </div>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به ویژه</span>
-                                    <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] text-emerald-400/80 font-vazir">(میانگین اقلام: <span className="font-en font-semibold">{isLoading ? '...' : stats?.avgItemsPerInvoiceSub?.toFixed(1)}</span>)</span>
+                                        <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -841,6 +882,11 @@
                                     <span className="font-en font-black text-4xl text-sky-600 tracking-tighter" dir="ltr">
                                         {isLoading ? '...' : `${stats?.diversityConversion?.toFixed(1)}%`}
                                     </span>
+                                    <div className="flex gap-2 mt-2 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
+                                        <span>عادی: <strong className="font-en text-sky-700" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionNormal?.toFixed(1)}%`}</strong></span>
+                                        <span className="text-sky-200">|</span>
+                                        <span>ویژه: <strong className="font-en text-emerald-600" dir="ltr">{isLoading ? '...' : `${stats?.diversityConversionSub?.toFixed(1)}%`}</strong></span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -991,6 +1037,18 @@
                                     <>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                             {unactedData[unactedTab].slice(0, 60).map(d => {
+                                                const profile = d.customerProfile;
+                                                const fName = profile?.first_name || profile?.firstname || profile?.name || '';
+                                                const lName = profile?.last_name || profile?.lastname || '';
+                                                const fullName = `${fName} ${lName}`.trim() || 'مشتری نامشخص';
+                                                
+                                                let cityName = '';
+                                                if (typeof profile?.city === 'string') cityName = profile.city;
+                                                else if (typeof profile?.city_name === 'string') cityName = profile.city_name;
+                                                else if (typeof profile?.cityname === 'string') cityName = profile.cityname;
+                                                
+                                                const cityText = cityName ? `(${cityName})` : '';
+
                                                 const gDate = new Date(d.createdat);
                                                 const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
                                                 const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
@@ -1003,11 +1061,19 @@
                                                             <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{String(d.id).substring(0, 8)}</span></span>
                                                             {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
                                                         </div>
-                                                        <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
-                                                            <i className="fa-regular fa-clock"></i> {dateStr}
+                                                        
+                                                        <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                                                            <i className="fa-solid fa-user-circle text-slate-400 text-[14px]"></i> 
+                                                            <span className="truncate">{fullName} <span className="text-slate-500 font-normal">{cityText}</span></span>
                                                         </div>
-                                                        <div className="text-[11px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
-                                                            <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
+
+                                                        <div className="flex justify-between items-center mt-2">
+                                                            <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                                <i className="fa-regular fa-clock"></i> {dateStr}
+                                                            </div>
+                                                            <div className="text-[10px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
+                                                                <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 );
