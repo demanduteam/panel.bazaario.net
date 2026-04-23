@@ -205,7 +205,6 @@
             }
         };
 
-        // Function to generate the structured weeks for a given Persian season
         const getSeasonWeeks = (year, season) => {
             const startMonth = (season - 1) * 3 + 1;
             const endMonth = season * 3;
@@ -217,7 +216,6 @@
             const startDate = new Date(sG.gy, sG.gm - 1, sG.gd);
             const endDate = new Date(eG.gy, eG.gm - 1, eG.gd);
 
-            // Find the first Saturday on or before the start of the season
             const startWeekday = startDate.getDay(); 
             const persianWeekday = (startWeekday + 1) % 7; 
             
@@ -236,7 +234,7 @@
                     label: `هفته ${weekNum}`,
                     start: new Date(currentWeekStart),
                     end: new Date(weekEnd),
-                    records: [] // Array to hold daily stats
+                    records: [] 
                 });
                 
                 currentWeekStart.setDate(currentWeekStart.getDate() + 7);
@@ -294,21 +292,24 @@
             const [activeTab, setActiveTab] = React.useState('dashboard');
 
             // --- OKR States ---
-            const [okrs, setOkrs] = React.useState(() => {
-                const saved = localStorage.getItem('bazaario_marketing_okrs');
-                return saved ? JSON.parse(saved) : [];
-            });
+            const [okrs, setOkrs] = React.useState([]); // Removed localStorage initialization
             // Form & View Filters for OKR
             const [viewOkrYear, setViewOkrYear] = React.useState(1405);
             const [viewOkrSeason, setViewOkrSeason] = React.useState(1);
             const [newOkrOwner, setNewOkrOwner] = React.useState('');
             const [newOkrMetric, setNewOkrMetric] = React.useState('gmv');
-            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_growth'); // 'cumulative' or 'weekly_growth'
+            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_growth'); 
             const [newOkrTarget, setNewOkrTarget] = React.useState('');
             const [isSubmittingOkr, setIsSubmittingOkr] = React.useState(false);
             
-            // OKR Daily Stats (Fetched specifically for the selected OKR season)
             const [okrDailyStats, setOkrDailyStats] = React.useState([]);
+
+            // --- OKR Review Modal States ---
+            const [reviewOkrId, setReviewOkrId] = React.useState(null);
+            const [reviewTab, setReviewTab] = React.useState('actions'); // 'actions' or 'edit'
+            const [newActionText, setNewActionText] = React.useState('');
+            const [editTargetValue, setEditTargetValue] = React.useState('');
+            const [editTargetReason, setEditTargetReason] = React.useState('');
 
             // --- Dashboard Global Filter States ---
             const [selectedYear, setSelectedYear] = React.useState(1405);
@@ -327,11 +328,7 @@
             const [isOkrLoading, setIsOkrLoading] = React.useState(false);
             const [error, setError] = React.useState(null);
 
-            // Persist OKRs to local storage
-            React.useEffect(() => {
-                localStorage.setItem('bazaario_marketing_okrs', JSON.stringify(okrs));
-            }, [okrs]);
-
+            // Authenticate and Setup
             React.useEffect(() => {
                 const verifyAuth = async () => {
                     try {
@@ -372,6 +369,37 @@
                 };
             }, []);
 
+            // Load OKRs from Database
+            React.useEffect(() => {
+                if (!isAuthorized) return;
+                
+                const loadOkrs = async () => {
+                    const { data, error } = await supabase
+                        .from('marketing_okrs')
+                        .select('*')
+                        .order('created_at', { ascending: true });
+                        
+                    if (data && !error) {
+                        setOkrs(data.map(d => ({
+                            id: d.id,
+                            metricKey: d.metric_key,
+                            targetType: d.target_type,
+                            baseline: Number(d.baseline),
+                            target: Number(d.target),
+                            year: d.target_year,
+                            season: d.target_season,
+                            owner: d.owner,
+                            actions: d.actions || [],
+                            history: d.history || []
+                        })));
+                    } else if (error) {
+                        console.error("Error loading OKRs from DB", error);
+                    }
+                };
+                
+                loadOkrs();
+            }, [isAuthorized]);
+
             const getPeriodOptions = () => {
                 if (filterType === 'seasonal') return [ { value: 1, label: 'فصل اول (بهار)' }, { value: 2, label: 'فصل دوم (تابستان)' }, { value: 3, label: 'فصل سوم (پاییز)' }, { value: 4, label: 'فصل چهارم (زمستان)' } ];
                 if (filterType === 'monthly') return ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'].map((m, i) => ({ value: i + 1, label: m }));
@@ -379,7 +407,6 @@
                 return [];
             };
 
-            // محاسبه تاریخ میلادی شروع و پایان برای فیلتر گلوبال داشبورد
             const { startGDate, endGDate } = React.useMemo(() => {
                 let sGDate, eGDate;
 
@@ -425,7 +452,6 @@
                 return { startGDate: sGDate, endGDate: eGDate };
             }, [selectedYear, filterType, selectedPeriod]);
 
-            // تولید رشته‌ی تاریخ برای نمایش به کاربر
             const periodDateRange = React.useMemo(() => {
                 if (!startGDate || !endGDate) return '';
                 
@@ -704,7 +730,6 @@
                         const sG = jalaali.toGregorian(viewOkrYear, startMonth, 1);
                         const eG = jalaali.toGregorian(viewOkrYear, endMonth, endDay);
 
-                        // Find week 1 start date
                         const startDate = new Date(sG.gy, sG.gm - 1, sG.gd);
                         const startWeekday = startDate.getDay(); 
                         const persianWeekday = (startWeekday + 1) % 7; 
@@ -750,7 +775,33 @@
                 return weeks;
             }, [okrDailyStats, viewOkrYear, viewOkrSeason]);
             
-            // --- OKR Submissions ---
+            // --- OKR DB Handlers ---
+            const updateOkr = async (id, updaterFn) => {
+                setOkrs(prev => {
+                    const targetIndex = prev.findIndex(o => o.id === id);
+                    if (targetIndex === -1) return prev;
+                    
+                    const cloned = { ...prev[targetIndex] };
+                    cloned.actions = cloned.actions ? [...cloned.actions] : [];
+                    cloned.history = cloned.history ? [...cloned.history] : [];
+                    
+                    const updated = updaterFn(cloned);
+                    
+                    // DB Update
+                    supabase.from('marketing_okrs').update({
+                        target: updated.target,
+                        actions: updated.actions,
+                        history: updated.history
+                    }).eq('id', id).then(({error}) => {
+                        if(error) console.error("Error updating OKR in DB:", error);
+                    });
+                    
+                    const next = [...prev];
+                    next[targetIndex] = updated;
+                    return next;
+                });
+            };
+
             const handleAddOkr = async (e) => {
                 e.preventDefault();
                 if(!newOkrTarget || !newOkrOwner) return;
@@ -760,7 +811,6 @@
 
                 try {
                     if (newOkrTargetType === 'weekly_growth') {
-                        // We fetch baseline from the very first week of the chosen season
                         const weeks = getSeasonWeeks(viewOkrYear, viewOkrSeason);
                         const week1 = weeks[0];
                         
@@ -780,25 +830,114 @@
                     baselineVal = 0;
                 }
 
-                const newOkr = {
-                    id: Date.now().toString(),
-                    metricKey: newOkrMetric,
-                    targetType: newOkrTargetType,
+                const { data: insertedData, error: insertError } = await supabase.from('marketing_okrs').insert([{
+                    metric_key: newOkrMetric,
+                    target_type: newOkrTargetType,
                     baseline: baselineVal,
                     target: Number(newOkrTarget),
-                    year: viewOkrYear,
-                    season: viewOkrSeason,
-                    owner: newOkrOwner
-                };
+                    target_year: viewOkrYear,
+                    target_season: viewOkrSeason,
+                    owner: newOkrOwner,
+                    actions: [],
+                    history: []
+                }]).select();
+
+                if (!insertError && insertedData && insertedData.length > 0) {
+                    const d = insertedData[0];
+                    const newOkr = {
+                        id: d.id,
+                        metricKey: d.metric_key,
+                        targetType: d.target_type,
+                        baseline: Number(d.baseline),
+                        target: Number(d.target),
+                        year: d.target_year,
+                        season: d.target_season,
+                        owner: d.owner,
+                        actions: d.actions || [],
+                        history: d.history || []
+                    };
+                    setOkrs([...okrs, newOkr]);
+                } else {
+                    console.error("Error inserting OKR:", insertError);
+                    alert("خطا در ثبت هدف در دیتابیس.");
+                }
                 
-                setOkrs([...okrs, newOkr]);
                 setNewOkrTarget('');
                 setNewOkrOwner('');
                 setIsSubmittingOkr(false);
             };
 
+            const handleDeleteOkr = async (id) => {
+                if(!window.confirm('آیا از حذف این هدف کلیدی اطمینان دارید؟')) return;
+                
+                setOkrs(prev => prev.filter(o => o.id !== id));
+                const { error } = await supabase.from('marketing_okrs').delete().eq('id', id);
+                if (error) console.error("Error deleting OKR:", error);
+            };
+
+            const handleAddAction = (e) => {
+                e.preventDefault();
+                if (!newActionText.trim()) return;
+                
+                updateOkr(reviewOkrId, (okr) => {
+                    okr.actions.push({
+                        id: Date.now().toString(),
+                        text: newActionText,
+                        isCompleted: false,
+                        learning: '',
+                        dateAdded: new Date().toISOString()
+                    });
+                    return okr;
+                });
+                setNewActionText('');
+            };
+
+            const handleToggleAction = (actionId, isCompleted) => {
+                updateOkr(reviewOkrId, (okr) => {
+                    const action = okr.actions.find(a => a.id === actionId);
+                    if (action) action.isCompleted = isCompleted;
+                    return okr;
+                });
+            };
+
+            const handleUpdateLearning = (actionId, learningText) => {
+                updateOkr(reviewOkrId, (okr) => {
+                    const action = okr.actions.find(a => a.id === actionId);
+                    if (action) action.learning = learningText;
+                    return okr;
+                });
+            };
+
+            const handleEditTargetSubmit = (e) => {
+                e.preventDefault();
+                if (!editTargetValue || !editTargetReason.trim()) return;
+
+                updateOkr(reviewOkrId, (okr) => {
+                    okr.history.push({
+                        id: Date.now().toString(),
+                        date: new Date().toISOString(),
+                        oldTarget: okr.target,
+                        newTarget: Number(editTargetValue),
+                        reason: editTargetReason
+                    });
+                    okr.target = Number(editTargetValue);
+                    return okr;
+                });
+                
+                setEditTargetReason('');
+            };
+
+            // Effect to populate edit target value when modal opens
+            React.useEffect(() => {
+                if (reviewOkrId) {
+                    const activeOkr = okrs.find(o => o.id === reviewOkrId);
+                    if (activeOkr) setEditTargetValue(activeOkr.target);
+                }
+            }, [reviewOkrId, okrs]);
+
             const currentSeasonOkrs = okrs.filter(o => o.year === viewOkrYear && o.season === viewOkrSeason);
             const seasonNames = {1: 'بهار', 2: 'تابستان', 3: 'پاییز', 4: 'زمستان'};
+            const reviewingOkrObj = reviewOkrId ? okrs.find(o => o.id === reviewOkrId) : null;
 
             // --- Show Loading While Checking Auth ---
             if (authLoading) {
@@ -813,7 +952,7 @@
 
             // --- Main Render (Authorized Only) ---
             return (
-                <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen flex flex-col gap-6">
+                <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen flex flex-col gap-6 relative">
                     
                     {/* Header Box (Only for Dashboard Tab) */}
                     {activeTab === 'dashboard' && (
@@ -1421,7 +1560,7 @@
 
                     {/* ================================== TAB 2: OKR MANAGEMENT ================================== */}
                     {activeTab === 'okr' && (
-                        <div className="flex flex-col gap-6 fade-in mt-2">
+                        <div className="flex flex-col gap-6 fade-in mt-2 relative">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <h2 className="text-base sm:text-lg font-bold text-slate-700 flex items-center gap-2">
                                     <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-bullseye"></i></span>
@@ -1429,7 +1568,7 @@
                                 </h2>
                                 <div className="text-[11px] text-slate-500 bg-indigo-50 px-3 py-2 rounded-xl border border-indigo-100 shadow-sm leading-relaxed">
                                     <i className="fa-solid fa-circle-info text-indigo-400 ml-1"></i>
-                                    <strong>نکته مهم:</strong> اهداف به صورت <strong>فصلی</strong> تعریف می‌شوند و روند پیشرفت هر هدف، هفته به هفته روی نمودار تخصصی آن ترسیم می‌گردد.
+                                    <strong>نکته مهم:</strong> اهداف به صورت <strong>فصلی</strong> تعریف می‌شوند و روند پیشرفت هر هدف، هفته به هفته روی نمودار تخصصی آن ترسیم می‌گردد. روی هر هدف کلیک کنید تا <strong>جلسه مرور و اکشن‌ها</strong> را ثبت کنید.
                                 </div>
                             </div>
                             
@@ -1438,7 +1577,7 @@
                                 {isSubmittingOkr && (
                                     <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
                                         <div className="flex items-center gap-2 text-indigo-600 font-bold bg-white px-4 py-2 rounded-xl shadow-md">
-                                            <i className="fa-solid fa-circle-notch fa-spin"></i> در حال استخراج نقطه شروع از دیتابیس...
+                                            <i className="fa-solid fa-circle-notch fa-spin"></i> در حال پردازش دیتابیس...
                                         </div>
                                     </div>
                                 )}
@@ -1519,7 +1658,6 @@
                                                 targetVal = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1)) * index;
                                             }
                                             
-                                            // Only show actual if the week is not completely in the future
                                             const isFuture = w.start > now;
                                             let finalActual = null;
                                             
@@ -1547,6 +1685,9 @@
                                         const progressPercent = Math.max(0, Math.min(100, rawProgress));
                                         const isSuccess = rawProgress >= 100;
 
+                                        const actionsList = okr.actions || [];
+                                        const completedActions = actionsList.filter(a => a.isCompleted).length;
+
                                         return (
                                             <div key={okr.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-card transition-all relative overflow-hidden group flex flex-col">
                                                 <div className={`absolute top-0 right-0 w-1.5 h-full transition-colors ${isSuccess ? 'bg-emerald-400' : 'bg-indigo-400'}`}></div>
@@ -1568,7 +1709,7 @@
                                                         </div>
                                                         <h4 className="font-bold text-slate-800 text-base">{AVAILABLE_METRICS.find(m => m.key === okr.metricKey)?.label || okr.metricKey}</h4>
                                                     </div>
-                                                    <button onClick={() => setOkrs(okrs.filter(o => o.id !== okr.id))} className="text-slate-300 hover:text-red-500 transition-colors bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center" title="حذف این هدف">
+                                                    <button onClick={() => handleDeleteOkr(okr.id)} className="text-slate-300 hover:text-red-500 transition-colors bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center shrink-0" title="حذف این هدف">
                                                         <i className="fa-solid fa-trash text-xs"></i>
                                                     </button>
                                                 </div>
@@ -1592,7 +1733,7 @@
                                                 </div>
 
                                                 {/* Summary Stats */}
-                                                <div className="flex justify-between text-[11px] font-en font-semibold bg-slate-50 p-3 rounded-xl border border-slate-100 mt-auto">
+                                                <div className="flex justify-between text-[11px] font-en font-semibold bg-slate-50 p-3 rounded-xl border border-slate-100 mt-auto mb-4">
                                                     <div className="flex flex-col">
                                                         <span className="text-slate-400 mb-0.5 font-vazir">شروع (مبنا)</span>
                                                         <span className="text-slate-600">{formatOkrValue(okr.baseline, okr.metricKey)}</span>
@@ -1606,10 +1747,199 @@
                                                         <span className="text-slate-800">{formatOkrValue(okr.target, okr.metricKey)}</span>
                                                     </div>
                                                 </div>
+
+                                                {/* Review Button */}
+                                                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <div className="text-[10px] text-slate-500 font-bold flex items-center gap-1.5">
+                                                        <i className="fa-solid fa-list-check text-slate-400"></i>
+                                                        {actionsList.length === 0 ? 'بدون اکشن ثبت شده' : `${formatNumber(completedActions)} از ${formatNumber(actionsList.length)} اکشن انجام شده`}
+                                                    </div>
+                                                    <button onClick={() => setReviewOkrId(okr.id)} className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                                                        <i className="fa-solid fa-pen-to-square"></i> جلسه مرور و اکشن‌ها
+                                                    </button>
+                                                </div>
                                             </div>
                                         );
                                     })
                                 )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ================================== MODAL: OKR REVIEW & ACTIONS ================================== */}
+                    {reviewOkrId && reviewingOkrObj && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm fade-in">
+                            <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+                                {/* Modal Header */}
+                                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                    <div className="flex flex-col gap-1">
+                                        <h2 className="font-black text-slate-800 flex items-center gap-2">
+                                            <i className="fa-solid fa-clipboard-check text-indigo-500"></i> جلسه مرور شاخص: {AVAILABLE_METRICS.find(m => m.key === reviewingOkrObj.metricKey)?.label || reviewingOkrObj.metricKey}
+                                        </h2>
+                                        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-2">
+                                            <span className="bg-white px-2 py-0.5 rounded border border-slate-200">فصل {seasonNames[reviewingOkrObj.season]} {reviewingOkrObj.year}</span>
+                                            {reviewingOkrObj.owner && <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100"><i className="fa-solid fa-user-tie ml-1"></i>{reviewingOkrObj.owner}</span>}
+                                        </span>
+                                    </div>
+                                    <button onClick={() => setReviewOkrId(null)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500 transition-colors">
+                                        <i className="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+
+                                {/* Modal Tabs */}
+                                <div className="flex px-6 border-b border-slate-100 bg-white">
+                                    <button onClick={() => setReviewTab('actions')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${reviewTab === 'actions' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                                        <i className="fa-solid fa-list-check ml-1.5"></i> اکشن‌ها و یادگیری‌ها
+                                    </button>
+                                    <button onClick={() => setReviewTab('edit')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${reviewTab === 'edit' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                                        <i className="fa-solid fa-bullseye-arrow ml-1.5"></i> ویرایش تارگت
+                                    </button>
+                                </div>
+
+                                {/* Modal Content Body */}
+                                <div className="p-6 overflow-y-auto flex-1 bg-slate-50/30">
+                                    
+                                    {/* --- TAB: ACTIONS --- */}
+                                    {reviewTab === 'actions' && (
+                                        <div className="flex flex-col gap-6">
+                                            <form onSubmit={handleAddAction} className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={newActionText} 
+                                                    onChange={e => setNewActionText(e.target.value)} 
+                                                    placeholder="اکشن یا اقدام جدید را بنویسید (مثلاً: راه‌اندازی کمپین پیامکی در هفته سوم)" 
+                                                    className="flex-1 bg-white border border-slate-200 text-sm rounded-xl px-4 py-3 font-vazir focus:outline-none focus:border-indigo-400 shadow-sm"
+                                                />
+                                                <button type="submit" disabled={!newActionText.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-sm py-3 px-6 rounded-xl transition-colors shadow-sm whitespace-nowrap">
+                                                    <i className="fa-solid fa-plus ml-1"></i> افزودن
+                                                </button>
+                                            </form>
+
+                                            <div className="flex flex-col gap-3">
+                                                {(!reviewingOkrObj.actions || reviewingOkrObj.actions.length === 0) ? (
+                                                    <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white">
+                                                        <i className="fa-solid fa-clipboard-list text-3xl mb-2 text-slate-300"></i>
+                                                        <p className="text-sm">هنوز هیچ اکشنی برای این هدف ثبت نشده است.</p>
+                                                    </div>
+                                                ) : (
+                                                    reviewingOkrObj.actions.map(action => (
+                                                        <div key={action.id} className={`bg-white border rounded-xl p-4 shadow-sm transition-all ${action.isCompleted ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200'}`}>
+                                                            <div className="flex items-start gap-3">
+                                                                <div className="pt-0.5">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={action.isCompleted} 
+                                                                        onChange={e => handleToggleAction(action.id, e.target.checked)}
+                                                                        className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex-1 flex flex-col gap-3">
+                                                                    <div className="flex justify-between items-start">
+                                                                        <p className={`text-sm font-semibold ${action.isCompleted ? 'text-slate-500 line-through' : 'text-slate-700'}`}>
+                                                                            {action.text}
+                                                                        </p>
+                                                                        <span className="text-[10px] text-slate-400 font-en bg-slate-100 px-2 py-0.5 rounded">
+                                                                            {new Date(action.dateAdded).toLocaleDateString('fa-IR')}
+                                                                        </span>
+                                                                    </div>
+                                                                    
+                                                                    {/* Learning Input (Only visible if completed) */}
+                                                                    {action.isCompleted && (
+                                                                        <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 flex flex-col gap-2">
+                                                                            <label className="text-[11px] font-bold text-emerald-700 flex items-center gap-1.5">
+                                                                                <i className="fa-solid fa-lightbulb"></i> یادگیری‌ها و نتیجه این اکشن:
+                                                                            </label>
+                                                                            <textarea 
+                                                                                value={action.learning || ''}
+                                                                                onChange={e => handleUpdateLearning(action.id, e.target.value)}
+                                                                                placeholder="چه درسی از این اقدام گرفتیم؟ نتیجه چه بود؟"
+                                                                                className="w-full bg-white border border-emerald-200 text-xs rounded-lg px-3 py-2 font-vazir focus:outline-none focus:border-emerald-400 resize-none h-16"
+                                                                            />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* --- TAB: EDIT TARGET --- */}
+                                    {reviewTab === 'edit' && (
+                                        <div className="flex flex-col gap-8">
+                                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 items-start text-amber-800">
+                                                <i className="fa-solid fa-triangle-exclamation mt-0.5 text-amber-600"></i>
+                                                <div className="text-xs leading-relaxed">
+                                                    <strong>توجه:</strong> تغییر تارگت (هدف) در میانه مسیر باید با دلیل منطقی و توافق تیمی انجام شود. سیستم برای حفظ شفافیت، تمام تغییرات و دلایل آن‌ها را در پایگاه داده مرکزی ثبت می‌کند.
+                                                </div>
+                                            </div>
+
+                                            <form onSubmit={handleEditTargetSubmit} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+                                                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                                                    <span className="text-sm font-bold text-slate-600">تارگت فعلی:</span>
+                                                    <span className="text-lg font-black font-en text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">{formatNumber(reviewingOkrObj.target)}</span>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <label className="text-xs font-bold text-slate-700">تارگت جدید</label>
+                                                        <input 
+                                                            type="number" 
+                                                            step="any" 
+                                                            value={editTargetValue} 
+                                                            onChange={e => setEditTargetValue(e.target.value)} 
+                                                            required 
+                                                            className="w-full bg-slate-50 border border-slate-200 text-sm font-en font-bold rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-400"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <label className="text-xs font-bold text-slate-700">دلیل این تغییر چیست؟ <span className="text-red-500">*</span></label>
+                                                        <textarea 
+                                                            value={editTargetReason} 
+                                                            onChange={e => setEditTargetReason(e.target.value)} 
+                                                            required
+                                                            placeholder="مثلاً: به دلیل تغییر استراتژی کمپین تابستانه، تارگت کاهش یافت." 
+                                                            className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-400 resize-none h-24"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex justify-end pt-2">
+                                                    <button type="submit" disabled={!editTargetValue || !editTargetReason.trim() || Number(editTargetValue) === reviewingOkrObj.target} className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-sm py-2.5 px-6 rounded-xl transition-colors shadow-sm">
+                                                        ذخیره تغییرات در سرور
+                                                    </button>
+                                                </div>
+                                            </form>
+
+                                            {/* History List */}
+                                            <div className="flex flex-col gap-3">
+                                                <h4 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2"><i className="fa-solid fa-clock-rotate-left"></i> تاریخچه تغییرات</h4>
+                                                {(!reviewingOkrObj.history || reviewingOkrObj.history.length === 0) ? (
+                                                    <p className="text-xs text-slate-400 bg-slate-100 px-4 py-3 rounded-lg">تا کنون تغییری در تارگت ثبت نشده است.</p>
+                                                ) : (
+                                                    <div className="relative border-r-2 border-slate-200 pr-4 mr-2 flex flex-col gap-4">
+                                                        {reviewingOkrObj.history.sort((a,b) => new Date(b.date) - new Date(a.date)).map(h => (
+                                                            <div key={h.id} className="relative bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                                                <div className="absolute top-5 -right-[23px] w-3 h-3 rounded-full bg-slate-300 border-2 border-white"></div>
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <div className="text-[11px] font-bold text-slate-600">
+                                                                        تغییر تارگت از <span className="font-en text-slate-400 line-through mx-1">{formatNumber(h.oldTarget)}</span> به <span className="font-en text-indigo-600 mx-1">{formatNumber(h.newTarget)}</span>
+                                                                    </div>
+                                                                    <span className="text-[10px] text-slate-400 font-en bg-slate-50 px-2 py-0.5 rounded">{new Date(h.date).toLocaleDateString('fa-IR')}</span>
+                                                                </div>
+                                                                <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                                                    <strong>دلیل:</strong> {h.reason}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
