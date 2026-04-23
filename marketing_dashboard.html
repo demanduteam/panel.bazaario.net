@@ -1038,15 +1038,21 @@
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                             {unactedData[unactedTab].slice(0, 60).map(d => {
                                                 const profile = d.customerProfile;
+                                                
                                                 const fName = profile?.first_name || profile?.firstname || profile?.name || '';
-                                                const lName = profile?.last_name || profile?.lastname || '';
-                                                const fullName = `${fName} ${lName}`.trim() || 'مشتری نامشخص';
+                                                const lName = profile?.last_name || profile?.lastname || profile?.surname || profile?.family_name || profile?.familyname || '';
+                                                let fullName = profile?.full_name || profile?.fullname || `${fName} ${lName}`.trim();
                                                 
-                                                let cityName = '';
-                                                if (typeof profile?.city === 'string') cityName = profile.city;
-                                                else if (typeof profile?.city_name === 'string') cityName = profile.city_name;
-                                                else if (typeof profile?.cityname === 'string') cityName = profile.cityname;
+                                                if (!fullName && profile?.raw_user_meta_data) {
+                                                    const meta = typeof profile.raw_user_meta_data === 'string' ? JSON.parse(profile.raw_user_meta_data) : profile.raw_user_meta_data;
+                                                    const mFName = meta?.first_name || meta?.name || '';
+                                                    const mLName = meta?.last_name || meta?.surname || meta?.family_name || '';
+                                                    fullName = meta?.full_name || `${mFName} ${mLName}`.trim();
+                                                }
                                                 
+                                                if (!fullName || fullName.trim() === '') fullName = 'مشتری نامشخص';
+                                                
+                                                let cityName = profile?.city || profile?.city_name || profile?.cityname || profile?.province || profile?.city_id || '';
                                                 const cityText = cityName ? `(${cityName})` : '';
 
                                                 const gDate = new Date(d.createdat);
