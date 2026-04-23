@@ -821,7 +821,7 @@
                                                 return (
                                                     <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
                                                         <div className="flex justify-between items-start mb-2">
-                                                            <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{d.id.substring(0, 8)}</span></span>
+                                                            <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{String(d.id).substring(0, 8)}</span></span>
                                                             {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
                                                         </div>
                                                         <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
