@@ -389,6 +389,10 @@
                             soldItems: sum('sold_items'),
                             diversityRequested: sum('unique_products_requested'),
                             diversitySold: sum('unique_products_sold'),
+                            diversityRequestedNormal: sum('unique_products_requested_normal'),
+                            diversityRequestedSub: sum('unique_products_requested_sub'),
+                            diversitySoldNormal: sum('unique_products_sold_normal'),
+                            diversitySoldSub: sum('unique_products_sold_sub'),
                             // Conversions
                             fulfillmentRateNormal: sum('items_normal') > 0 ? (sum('fulfilled_items_normal') / sum('items_normal')) * 100 : 0, 
                             fulfillmentRateSub: sum('items_sub') > 0 ? (sum('fulfilled_items_sub') / sum('items_sub')) * 100 : 0,
@@ -714,14 +718,17 @@
                                         <i className="fa-solid fa-clipboard-list"></i>
                                     </div>
                                     <span className="text-sm font-bold text-slate-700">تنوع کالای درخواستی</span>
-                                    <span className="font-en font-black text-xl text-slate-800 mt-1">
-                                        {isLoading ? '...' : (
-                                            <>
-                                                {formatNumber(stats?.diversityRequested)}
-                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-2 block mt-1">(از کل {formatNumber(overallTotals.products)} کالای سیستم)</span>
-                                            </>
-                                        )}
-                                    </span>
+                                    <div className="flex flex-col items-center mt-1">
+                                        <span className="font-en font-black text-xl text-slate-800">
+                                            {isLoading ? '...' : formatNumber(stats?.diversityRequested)}
+                                        </span>
+                                        <div className="flex gap-2 mt-1.5 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                            <span>عادی: <strong className="font-en text-slate-700">{isLoading ? '...' : formatNumber(stats?.diversityRequestedNormal)}</strong></span>
+                                            <span className="text-slate-300">|</span>
+                                            <span>ویژه: <strong className="font-en text-purple-600">{isLoading ? '...' : formatNumber(stats?.diversityRequestedSub)}</strong></span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 font-normal font-vazir mt-1">(از کل {isLoading ? '...' : formatNumber(overallTotals.products)} کالای سیستم)</span>
+                                    </div>
                                 </div>
 
                                 <div className="hidden md:flex flex-col items-center px-4">
@@ -739,7 +746,16 @@
                                         <i className="fa-solid fa-box-check"></i>
                                     </div>
                                     <span className="text-sm font-bold text-slate-700">تنوع کالای فروخته شده</span>
-                                    <span className="font-en font-black text-xl text-sky-600 mt-1">{isLoading ? '...' : formatNumber(stats?.diversitySold)}</span>
+                                    <div className="flex flex-col items-center mt-1">
+                                        <span className="font-en font-black text-xl text-sky-600">
+                                            {isLoading ? '...' : formatNumber(stats?.diversitySold)}
+                                        </span>
+                                        <div className="flex gap-2 mt-1.5 text-[10px] text-sky-600/80 bg-sky-100/50 px-2 py-0.5 rounded-full">
+                                            <span>عادی: <strong className="font-en text-sky-700">{isLoading ? '...' : formatNumber(stats?.diversitySoldNormal)}</strong></span>
+                                            <span className="text-sky-200">|</span>
+                                            <span>ویژه: <strong className="font-en text-emerald-600">{isLoading ? '...' : formatNumber(stats?.diversitySoldSub)}</strong></span>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Conversion Result */}
