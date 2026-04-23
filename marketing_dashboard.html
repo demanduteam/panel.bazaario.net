@@ -204,8 +204,6 @@
                     try {
                         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
                         if (sessionError || !session) {
-                            // window.location.href = 'index.html';
-                            // To prevent loop when testing
                             setIsAuthorized(false);
                             return;
                         }
@@ -218,16 +216,12 @@
 
                         if (profileError || !profile || profile.roleid !== ADMIN_ROLE_ID) {
                             alert('شما دسترسی لازم برای مشاهده این داشبورد را ندارید.');
-                            // window.location.href = 'index.html';
-                            // To prevent loop when testing
                             setIsAuthorized(false);
                             return;
                         }
 
                         setIsAuthorized(true);
                     } catch (err) {
-                        // window.location.href = 'index.html';
-                        // To prevent loop when testing
                         setIsAuthorized(false);
                     } finally {
                         setAuthLoading(false);
@@ -237,7 +231,6 @@
                 verifyAuth();
 
                 const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-                    // if (event === 'SIGNED_OUT') window.location.href = 'index.html';
                     if (event === 'SIGNED_OUT') setIsAuthorized(false);
                 });
 
@@ -334,19 +327,25 @@
                             const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
                             return {
                                 name: `${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`,
-                                'عادی': d.demands_normal,
-                                'اشتراکی': d.demands_sub,
-                                'GMV': Number(d.total_gmv),
-                                'کل اقلام': d.total_items,
-                                'اقلام تامین شده': d.fulfilled_items
+                                'عادی': d.demands_normal || 0,
+                                'اشتراکی': d.demands_sub || 0,
+                                'GMV': Number(d.total_gmv) || 0,
+                                'کل اقلام': d.total_items || 0,
+                                'اقلام تامین شده': d.fulfilled_items || 0
                             };
                         });
                         setDbData(chartDataMap);
 
                         // 4. Calculate sums for KPIs
                         const sum = (key) => (dailyStats || []).reduce((acc, curr) => acc + (Number(curr[key]) || 0), 0);
+                        const avg = (key) => {
+                            const validDays = (dailyStats || []).filter(d => Number(d[key]) > 0);
+                            if (validDays.length === 0) return 0;
+                            const total = validDays.reduce((acc, curr) => acc + Number(curr[key]), 0);
+                            return total / validDays.length;
+                        };
                         
-                        // Extract overall totals from the most recent day in the range (or last fetched)
+                        // Extract overall totals from the most recent day in the range
                         let latestCust = 0, latestSupp = 0, latestProd = 0;
                         if (dailyStats && dailyStats.length > 0) {
                             const last = dailyStats[dailyStats.length - 1];
@@ -354,7 +353,6 @@
                             latestSupp = last.total_suppliers_overall;
                             latestProd = last.total_products_overall;
                         } else {
-                            // Fallback if no data in period, get the absolute latest record
                             const { data: latestRecord } = await supabase.from('marketing_daily_stats').select('*').order('record_date', { ascending: false }).limit(1).maybeSingle();
                             if(latestRecord) {
                                 latestCust = latestRecord.total_customers_overall;
@@ -369,32 +367,47 @@
                             newCustomers: sum('new_customers'),
                             newSuppliers: sum('new_suppliers'),
                             totalNewUsers: sum('new_customers') + sum('new_suppliers'),
+                            newBuyers: sum('new_buyers'),
                             totalDemands: sum('total_demands'),
                             demandsNormal: sum('demands_normal'),
                             demandsSub: sum('demands_sub'),
                             totalFollowups: sum('total_followups'),
+                            followupsNormal: sum('followups_normal'),
+                            followupsSub: sum('followups_sub'),
                             salesCount: sum('sales_count'),
+                            salesNormal: sum('sales_normal'),
+                            salesSub: sum('sales_sub'),
                             gmv: sum('total_gmv'),
-                            gmvNormal: sum('gmv_normal'), // approximation based on table definition if we split it
+                            gmvNormal: sum('gmv_normal'), 
                             gmvSub: sum('gmv_sub'),
                             totalItems: sum('total_items'),
                             itemsNormal: sum('items_normal'),
                             itemsSub: sum('items_sub'),
                             fulfilledItems: sum('fulfilled_items'),
+                            fulfilledItemsNormal: sum('fulfilled_items_normal'),
+                            fulfilledItemsSub: sum('fulfilled_items_sub'),
                             soldItems: sum('sold_items'),
                             diversityRequested: sum('unique_products_requested'),
                             diversitySold: sum('unique_products_sold'),
                             // Conversions
-                            fulfillmentRateNormal: sum('items_normal') > 0 ? (sum('fulfilled_items') / sum('total_items')) * 100 : 0, 
-                            fulfillmentRateSub: sum('items_sub') > 0 ? (sum('fulfilled_items') / sum('total_items')) * 100 : 0,
+                            fulfillmentRateNormal: sum('items_normal') > 0 ? (sum('fulfilled_items_normal') / sum('items_normal')) * 100 : 0, 
+                            fulfillmentRateSub: sum('items_sub') > 0 ? (sum('fulfilled_items_sub') / sum('items_sub')) * 100 : 0,
                             funnelConversion: sum('fulfilled_items') > 0 ? (sum('sold_items') / sum('fulfilled_items')) * 100 : 0,
-                            diversityConversion: sum('unique_products_requested') > 0 ? (sum('unique_products_sold') / sum('unique_products_requested')) * 100 : 0
+                            diversityConversion: sum('unique_products_requested') > 0 ? (sum('unique_products_sold') / sum('unique_products_requested')) * 100 : 0,
+                            // Delays
+                            responseDelayAvgNormal: avg('response_delay_hours_normal'),
+                            responseDelayAvgSub: avg('response_delay_hours_sub'),
+                            fulfillmentDelayAvgNormal: avg('fulfillment_delay_hours_normal'),
+                            fulfillmentDelayAvgSub: avg('fulfillment_delay_hours_sub'),
+                            // Catalog
+                            activeSubscriptions: dailyStats && dailyStats.length > 0 ? dailyStats[dailyStats.length - 1].active_subscriptions : 0,
+                            updatedProducts: sum('updated_products'),
+                            activeSuppliersPriced: sum('active_suppliers_priced')
                         });
 
 
                         // ==============================================================
                         // --- 5. محاسبه تقاضاهای بدون اقدام زنده (همیشه آپدیت) ---
-                        // این بخش همچنان از جداول اصلی خوانده می‌شود تا هشدارها دقیق باشند
                         // ==============================================================
                         const now = new Date();
                         const { data: allRecentDemands } = await supabase
@@ -403,7 +416,7 @@
                             .eq('isdeleted', false)
                             .lte('createdat', now.toISOString())
                             .order('createdat', { ascending: false })
-                            .limit(1000); // به ۱۰۰۰ کاهش دادیم تا کاملا امن باشد
+                            .limit(1000); 
 
                         const candidateDemands = (allRecentDemands || []).filter(d => {
                             if (!d.createdat) return false;
@@ -464,7 +477,6 @@
                 fetchPeriodData();
             }, [selectedYear, filterType, selectedPeriod, isAuthorized]);
 
-            // Charts Formatting
             const chartData = dbData.map(d => ({
                 name: d.name,
                 'عادی': d['عادی'],
@@ -585,6 +597,45 @@
                                 </div>
                             </div>
                             
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-rose-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-crown ml-1"></i> ویژه و خریداران بار اول</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="کاربرانی که در این دوره اشتراکشان معتبر بوده است">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک‌های فعال</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSubscriptions)}</span>
+                                </div>
+                                <div className="flex justify-between items-center" title="مشتریانی که اولین خرید خود را در این دوره ثبت کرده‌اند">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">خریداران بار اول</span>
+                                    <span className="font-en font-bold text-rose-600 text-sm">{isLoading ? '...' : formatNumber(stats?.newBuyers)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-cyan-400 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-boxes-packing ml-1"></i> کاتالوگ و قیمت‌گذاری</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="کالاهای جدید اضافه شده به سیستم">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">کالای جدید</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">
+                                        {isLoading ? '...' : (
+                                            <>
+                                                {formatNumber(stats?.updatedProducts)}
+                                                <span className="text-[10px] text-slate-400 font-normal font-vazir mr-1">(کل: {formatNumber(overallTotals.products)})</span>
+                                            </>
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5" title="تعداد کالاهایی که قیمتشان آپدیت شده">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تنوع کالای آپدیت‌شده</span>
+                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.updatedProducts)}</span>
+                                </div>
+                                <div className="flex justify-between items-center" title="تعداد تامین‌کنندگانی که قیمت اعلام کرده‌اند">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین‌کنندگان فعال</span>
+                                    <span className="font-en font-bold text-cyan-600 text-sm">{isLoading ? '...' : formatNumber(stats?.activeSuppliersPriced)}</span>
+                                </div>
+                            </div>
+                            
                             <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-blue-400 w-full">
                                 <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
                                     <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-file-lines ml-1"></i> کل تقاضا</h4>
@@ -606,23 +657,41 @@
                                     <span className="font-en font-black text-emerald-600 text-lg">{isLoading ? '...' : formatNumber(stats?.salesCount)}</span>
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">جمع کل فاکتورها</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesCount)}</span>
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.salesNormal)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">ارزش ریالی فروش (GMV)</span>
-                                    <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatCurrency(stats?.gmv)}</span>
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">فروش به ویژه</span>
+                                    <span className="font-en font-bold text-emerald-600 text-sm">{isLoading ? '...' : formatNumber(stats?.salesSub)}</span>
                                 </div>
                             </div>
 
                             <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-indigo-400 w-full">
                                 <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-headset ml-1"></i> تماس و پیگیری</h4>
+                                    <h4 className="text-slate-500 text-xs font-bold"><i className="fa-solid fa-headset ml-1"></i> پیگیری و تماس</h4>
                                     <span className="font-en font-black text-indigo-600 text-lg">{isLoading ? '...' : formatNumber(stats?.totalFollowups)}</span>
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تعداد پیگیری‌های ثبت شده</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.totalFollowups)}</span>
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">با اشتراکی</span>
+                                    <span className="font-en font-bold text-indigo-600 text-sm">{isLoading ? '...' : formatNumber(stats?.followupsSub)}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-teal-500 w-full">
+                                <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                                    <h4 className="text-slate-500 text-[11px] font-bold"><i className="fa-solid fa-money-bill-trend-up ml-1"></i> مجموع فروش (GMV)</h4>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvNormal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">GMV ویژه</span>
+                                    <span className="font-en font-bold text-teal-600 text-[11px]">{isLoading ? '...' : formatCurrency(stats?.gmvSub)}</span>
                                 </div>
                             </div>
                         </div>
@@ -709,12 +778,29 @@
                             <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-emerald-400 w-full">
                                 <h4 className="text-slate-500 text-xs font-semibold mb-2 sm:mb-3">درصد تامین موفق اقلام</h4>
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">کل اقلام تامین شده</span>
-                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : formatNumber(stats?.fulfilledItems)}</span>
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">عادی</span>
+                                    <span className="font-en font-bold text-slate-800 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateNormal?.toFixed(1)}%`}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">تامین شده از کل</span>
-                                    <span className="font-en font-bold text-emerald-600 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateNormal?.toFixed(1)}%`}</span>
+                                    <span className="text-[11px] sm:text-xs font-medium text-slate-600">اشتراک ویژه</span>
+                                    <span className="font-en font-bold text-emerald-600 text-sm sm:text-base">{isLoading ? '...' : `${stats?.fulfillmentRateSub?.toFixed(1)}%`}</span>
+                                </div>
+                            </div>
+
+                            <div className="glass-card rounded-2xl p-4 fade-in flex flex-col justify-center border-r-4 border-r-amber-400 w-full">
+                                <h4 className="text-slate-500 text-xs font-semibold mb-3">زمان‌سنجی عملکرد</h4>
+                                <div className="grid grid-cols-[auto_1fr_1fr] gap-x-2 gap-y-2 items-center text-center">
+                                    <div></div>
+                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا پاسخ</div>
+                                    <div className="text-[10px] text-slate-400 font-medium whitespace-nowrap">تا تامین</div>
+                                    
+                                    <div className="text-[11px] font-medium text-slate-600 text-right pr-1">عادی</div>
+                                    <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="text-[12px] font-en font-bold text-slate-700 bg-amber-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgNormal?.toFixed(1)}<span className="text-[9px] text-slate-400 ml-0.5 font-normal">h</span></div>
+                                    
+                                    <div className="text-[11px] font-medium text-purple-600 text-right pr-1">ویژه</div>
+                                    <div className="text-[12px] font-en font-bold text-purple-700 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.responseDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-purple-400 ml-0.5 font-normal">h</span></div>
+                                    <div className="text-[12px] font-en font-bold text-emerald-600 bg-emerald-50 py-1 rounded">{isLoading ? '...' : stats?.fulfillmentDelayAvgSub?.toFixed(1)}<span className="text-[9px] text-emerald-400 ml-0.5 font-normal">h</span></div>
                                 </div>
                             </div>
                         </div>
