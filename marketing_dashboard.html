@@ -110,6 +110,37 @@
 
         const formatNumber = (num) => Number(num || 0).toLocaleString('fa-IR');
 
+        // تابع محاسبه ساعات کاری (کسر کردن روزهای جمعه)
+        const calculateWorkingHours = (startDate, endDate) => {
+            if (startDate >= endDate) return 0;
+            const totalMs = endDate.getTime() - startDate.getTime();
+            
+            let fridaysMs = 0;
+            let current = new Date(startDate);
+            current.setHours(0, 0, 0, 0); // شروع از ابتدای روز
+            
+            let endDay = new Date(endDate);
+            endDay.setHours(0, 0, 0, 0);
+            
+            while(current <= endDay) {
+                if (current.getDay() === 5) { // روز 5 به معنای جمعه است
+                    let fridayStart = new Date(current);
+                    let fridayEnd = new Date(current);
+                    fridayEnd.setHours(23, 59, 59, 999);
+                    
+                    let overlapStart = Math.max(startDate.getTime(), fridayStart.getTime());
+                    let overlapEnd = Math.min(endDate.getTime(), fridayEnd.getTime());
+                    
+                    if (overlapStart < overlapEnd) {
+                        fridaysMs += (overlapEnd - overlapStart);
+                    }
+                }
+                current.setDate(current.getDate() + 1);
+            }
+            
+            return (totalMs - fridaysMs) / (1000 * 60 * 60);
+        };
+
         // ==========================================
         // 3. UI Components (Box Design)
         // ==========================================
@@ -165,7 +196,11 @@
             const [activeSubsCount, setActiveSubsCount] = React.useState(0);
             const [catalogStats, setCatalogStats] = React.useState({ newProducts: 0, updatedProducts: 0, activeSuppliers: 0 });
             const [overallTotals, setOverallTotals] = React.useState({ customers: 0, suppliers: 0, products: 0 });
-            const [unactedDemands, setUnactedDemands] = React.useState([]);
+            
+            // Unacted Demands State (period & overall)
+            const [unactedData, setUnactedData] = React.useState({ period: [], overall: [] });
+            const [unactedTab, setUnactedTab] = React.useState('period'); // 'period' | 'overall'
+            
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState(null);
 
@@ -173,16 +208,12 @@
             React.useEffect(() => {
                 const verifyAuth = async () => {
                     try {
-                        // 1. Get current session
                         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-                        
                         if (sessionError || !session) {
-                            console.warn("No active session found. Redirecting to login...");
                             window.location.href = 'index.html';
                             return;
                         }
 
-                        // 2. Verify Admin Role
                         const { data: profile, error: profileError } = await supabase
                             .from('profiles')
                             .select('roleid')
@@ -190,13 +221,11 @@
                             .single();
 
                         if (profileError || !profile || profile.roleid !== ADMIN_ROLE_ID) {
-                            console.warn("User lacks admin permissions. Redirecting...");
                             alert('شما دسترسی لازم برای مشاهده این داشبورد را ندارید.');
                             window.location.href = 'index.html';
                             return;
                         }
 
-                        // User is valid and is an Admin
                         setIsAuthorized(true);
                     } catch (err) {
                         console.error("Auth verification failed:", err);
@@ -208,17 +237,12 @@
 
                 verifyAuth();
 
-                // Listen for manual sign outs in other tabs
                 const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-                    if (event === 'SIGNED_OUT') {
-                        window.location.href = 'index.html';
-                    }
+                    if (event === 'SIGNED_OUT') window.location.href = 'index.html';
                 });
 
                 return () => {
-                    if (authListener && authListener.subscription) {
-                        authListener.subscription.unsubscribe();
-                    }
+                    if (authListener && authListener.subscription) authListener.subscription.unsubscribe();
                 };
             }, []);
 
@@ -232,7 +256,7 @@
 
             React.useEffect(() => { setSelectedPeriod(1); }, [filterType, selectedYear]);
 
-            // Data Fetching Logic (Supabase) - Only runs if Authorized
+            // Data Fetching Logic (Supabase)
             React.useEffect(() => {
                 if (!isAuthorized) return;
 
@@ -297,7 +321,7 @@
                         const startDate = new Date(startG.gy, startG.gm - 1, startG.gd, 0, 0, 0).toISOString();
                         const endDate = new Date(endG.gy, endG.gm - 1, endG.gd, 23, 59, 59).toISOString();
 
-                        // Fetch Active Subscriptions based on the selected period
+                        // Fetch Active Subscriptions
                         const { data: subsProfiles } = await supabase
                             .from('profiles')
                             .select(`
@@ -306,7 +330,7 @@
                                 subscription_plan ( duration_days )
                             `)
                             .not('subscription_plan_id', 'is', null)
-                            .lte('subscription_start_date', endDate) // فیلتر: فقط اشتراک‌هایی که قبل از پایان این دوره شروع شده‌اند
+                            .lte('subscription_start_date', endDate)
                             .eq('isdeleted', false);
                             
                         let validCount = 0;
@@ -314,14 +338,11 @@
                         
                         if (subsProfiles) {
                             subsProfiles.forEach(p => {
-                                // بررسی وجود تاریخ شروع و مدت زمان اشتراک
                                 if (p.subscription_start_date && p.subscription_plan && typeof p.subscription_plan.duration_days === 'number') {
                                     const subStart = new Date(p.subscription_start_date);
                                     const subEnd = new Date(subStart);
-                                    // اضافه کردن مدت زمان اشتراک به تاریخ شروع
                                     subEnd.setDate(subEnd.getDate() + p.subscription_plan.duration_days);
                                     
-                                    // اگر تاریخ پایان اشتراک بزرگتر یا مساوی شروع بازه انتخابی باشد (اشتراک در این بازه معتبر بوده)
                                     if (subEnd >= periodStart) {
                                         validCount++;
                                     }
@@ -330,13 +351,13 @@
                         }
                         setActiveSubsCount(validCount);
 
-                        // 1. Fetch Status Types to find which ID means "Fulfilled"
+                        // Fetch Status Types
                         const { data: statusTypes } = await supabase.from('demandstatustype').select('id, main_status');
                         const fulfilledStatusIds = new Set((statusTypes || [])
                             .filter(s => ['Fulfilled', 'تامین شده', 'تامین شد', 'موفق'].includes(s.main_status))
                             .map(s => s.id));
                             
-                        // 1.5 Fetch Roles to identify Customer vs Supplier
+                        // Fetch Roles
                         const { data: rolesData } = await supabase.from('role').select('id, title');
                         const customerRoleIds = new Set();
                         const supplierRoleIds = new Set();
@@ -366,7 +387,7 @@
                             totalSupp = count || 0;
                         }
 
-                        // 2. Fetch Demands
+                        // 2. Fetch Demands for PERIOD
                         const { data: demands, error: err1 } = await supabase
                             .from('demand')
                             .select('id, createdat, is_emergency, customeruserid')
@@ -375,7 +396,6 @@
                             .eq('isdeleted', false)
                             .limit(10000);
 
-                        // Create lookup map for demands to avoid slow array searches
                         const demandUserIdMap = new Map();
                         (demands || []).forEach(d => {
                             if (d.id && d.customeruserid) demandUserIdMap.set(d.id, d.customeruserid);
@@ -417,7 +437,7 @@
                             .eq('isdeleted', false)
                             .limit(20000);
 
-                        // 4.7 Fetch Catalog & Supplier Stock Price History
+                        // 4.7 Fetch Catalog Data
                         let productsData = [];
                         const { data: pData1, error: pErr1 } = await supabase
                             .from('product')
@@ -426,7 +446,6 @@
                             .lte('createdat', endDate)
                             .limit(20000);
                             
-                        // پشتیبان‌گیری در صورتی که نام ستون در دیتابیس created_at باشد
                         if (pErr1) {
                             const { data: pData2 } = await supabase
                                 .from('product')
@@ -469,21 +488,15 @@
                             activeSuppliers: activeSuppliersSet.size
                         });
 
-                        if (err1) throw new Error(`خطا در جدول تقاضا (demand): ${err1.message}`);
-                        if (err2) throw new Error(`خطا در جدول آیتم‌های تقاضا (demand_item): ${err2.message}`);
-                        if (err4) throw new Error(`خطا در جدول پیگیری‌ها (customer_followups): ${err4.message}`);
-                        if (err5) throw new Error(`خطا در جدول پروفایل‌ها (profiles): ${err5.message}`);
+                        if (err1) throw new Error(`خطا در جدول تقاضا: ${err1.message}`);
+                        if (err2) throw new Error(`خطا در جدول آیتم‌ها: ${err2.message}`);
 
-                        // 5. Fetch Subscriptions to categorize users (Chunking to avoid query limit errors)
+                        // 5. Fetch Subscriptions to categorize users
                         let subscribedUsers = new Set();
                         const allUserIds = new Set();
                         
-                        if (demands && demands.length > 0) {
-                            demands.forEach(d => { if(d.customeruserid) allUserIds.add(d.customeruserid); });
-                        }
-                        if (followups && followups.length > 0) {
-                            followups.forEach(f => { if(f.customer_id) allUserIds.add(f.customer_id); });
-                        }
+                        if (demands && demands.length > 0) demands.forEach(d => { if(d.customeruserid) allUserIds.add(d.customeruserid); });
+                        if (followups && followups.length > 0) followups.forEach(f => { if(f.customer_id) allUserIds.add(f.customer_id); });
 
                         let uniqueUsersArray = [];
                         if (allUserIds.size > 0) {
@@ -495,14 +508,11 @@
                                     .from('user_subscription_history')
                                     .select('user_id')
                                     .in('user_id', chunk);
-                                    
-                                if (subsData) {
-                                    subsData.forEach(s => subscribedUsers.add(s.user_id));
-                                }
+                                if (subsData) subsData.forEach(s => subscribedUsers.add(s.user_id));
                             }
                         }
 
-                        // 6. Find Returning Buyers to isolate First-Time Buyers
+                        // 6. Find Returning Buyers
                         let returningUserIds = new Set();
                         if (uniqueUsersArray.length > 0) {
                             for (let i = 0; i < uniqueUsersArray.length; i += 500) {
@@ -517,35 +527,86 @@
                             }
                         }
 
-                        // --- Calculate Unacted Demands (> 48 hours) ---
-                        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-                        const unacted = [];
-                        (demands || []).forEach(d => {
-                            if (!d.createdat) return;
-                            const created = new Date(d.createdat);
+                        // ==============================================================
+                        // --- 7. محاسبه تقاضاهای بدون اقدام با استفاده از ساعات کاری ---
+                        // ==============================================================
+                        const now = new Date();
+                        
+                        // الف) استخراج ۵۰۰۰ تقاضای اخیر (برای پوشش کل تقاضاهای باز از گذشته تا به امروز)
+                        const { data: allRecentDemands } = await supabase
+                            .from('demand')
+                            .select('id, createdat, is_emergency')
+                            .eq('isdeleted', false)
+                            .lte('createdat', now.toISOString())
+                            .order('createdat', { ascending: false })
+                            .limit(5000);
+
+                        // ب) فیلتر کردن تقاضاهایی که بیش از 48 ساعت کاری از آنها گذشته است
+                        const candidateDemands = (allRecentDemands || []).filter(d => {
+                            if (!d.createdat) return false;
+                            return calculateWorkingHours(new Date(d.createdat), now) >= 48;
+                        });
+
+                        let allUnactedOverall = [];
+                        
+                        // ج) بررسی اینکه آیا این تقاضاها "اقدامی" داشته‌اند یا خیر
+                        if (candidateDemands.length > 0) {
+                            const candidateIds = candidateDemands.map(d => d.id);
                             
-                            if (created < fortyEightHoursAgo) {
-                                // بررسی اینکه آیا آیتم/لاگی برای این تقاضا ثبت شده است
-                                const items = (demandItems || []).filter(di => di.demandid === d.id);
-                                let hasAction = false;
-                                
-                                if (items.length > 0) {
-                                    hasAction = items.some(di => 
-                                        (demandLogs || []).some(l => String(l.demand_item_id) === String(di.id))
-                                    );
-                                }
-                                
-                                if (!hasAction) {
-                                    unacted.push(d);
+                            // واکشی آیتم‌های تقاضاهای کاندید
+                            const chunkSize = 800;
+                            let candItems = [];
+                            for(let i=0; i < candidateIds.length; i+= chunkSize) {
+                                const chunk = candidateIds.slice(i, i+chunkSize);
+                                const { data: ci } = await supabase.from('demand_item').select('id, demandid').in('demandid', chunk);
+                                if(ci) candItems.push(...ci);
+                            }
+
+                            // واکشی لاگ‌های مربوط به آیتم‌های کاندید
+                            const itemIds = candItems.map(i => i.id);
+                            let candLogs = [];
+                            if (itemIds.length > 0) {
+                                for(let i=0; i < itemIds.length; i+= chunkSize) {
+                                    const chunk = itemIds.slice(i, i+chunkSize);
+                                    const { data: logsChunk } = await supabase.from('demand_item_log').select('demand_item_id').in('demand_item_id', chunk);
+                                    if(logsChunk) candLogs.push(...logsChunk);
                                 }
                             }
-                        });
-                        // مرتب‌سازی بر اساس قدیمی‌ترین به جدیدترین
-                        unacted.sort((a, b) => new Date(a.createdat) - new Date(b.createdat));
-                        setUnactedDemands(unacted);
-                        // ----------------------------------------------
 
-                        // Initialize Mapping
+                            const logItemIds = new Set(candLogs.map(l => l.demand_item_id));
+
+                            // بررسی نهایی: تقاضایی که هیچ آیتمی ندارد، یا آیتم‌هایش هیچ لاگی ندارند -> بدون اقدام است
+                            candidateDemands.forEach(d => {
+                                const itemsForD = candItems.filter(ci => ci.demandid === d.id);
+                                let hasAction = false;
+                                if (itemsForD.length > 0) {
+                                    hasAction = itemsForD.some(ci => logItemIds.has(ci.id));
+                                }
+                                if (!hasAction) {
+                                    allUnactedOverall.push(d);
+                                }
+                            });
+                        }
+
+                        // مرتب‌سازی بر اساس قدیمی‌ترین به جدیدترین برای نمایش در لیست
+                        allUnactedOverall.sort((a, b) => new Date(a.createdat) - new Date(b.createdat));
+
+                        // تفکیک تقاضاهای بدون اقدامِ مربوط به دوره فعلی از کل
+                        const periodStartMs = new Date(startDate).getTime();
+                        const periodEndMs = new Date(endDate).getTime();
+
+                        const periodUnacted = allUnactedOverall.filter(d => {
+                            const t = new Date(d.createdat).getTime();
+                            return t >= periodStartMs && t <= periodEndMs;
+                        });
+
+                        setUnactedData({
+                            period: periodUnacted,
+                            overall: allUnactedOverall
+                        });
+                        // ==============================================================
+
+                        // Initialize Mapping for Charts and Aggregation
                         const dayMap = {};
                         for(let doy = startDoy; doy <= endDoy; doy++) {
                             const jDate = getJDateByDoy(selectedYear, doy);
@@ -553,13 +614,9 @@
                             dayMap[key] = { 
                                 dateStr: key, 
                                 demandsNormal: 0, demandsSub: 0, 
-                                // Followups
                                 followupsNormal: 0, followupsSub: 0,
-                                // Users
                                 newCustomers: 0, newSuppliers: 0, newBuyers: 0,
-                                // Invoice based metrics
                                 salesCount: 0, salesNormal: 0, salesSub: 0, gmv: 0, gmvNormal: 0, gmvSub: 0,
-                                // Item metrics
                                 totalItems: 0, itemsNormal: 0, itemsSub: 0,
                                 fulfilledItems: 0, fulfilledItemsNormal: 0, fulfilledItemsSub: 0, soldItems: 0,
                                 responseDelays: [], responseDelaysNormal: [], responseDelaysSub: [], 
@@ -613,7 +670,6 @@
                             }
                         });
 
-                        // Sets to track conversions efficiently
                         const invoicedDemandsSet = new Set();
                         const periodBuyersSet = new Set();
 
@@ -626,12 +682,10 @@
                             const key = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')}`;
                             
                             if (dayMap[key]) {
-                                // Basic Item Aggregation
                                 dayMap[key].totalItems += 1;
                                 const isSub = demandIsSub[di.demandid];
                                 if (isSub) dayMap[key].itemsSub += 1; else dayMap[key].itemsNormal += 1;
 
-                                // Fulfillment check
                                 const isFulfilled = fulfilledStatusIds.has(di.demandstatusid);
                                 if (isFulfilled) {
                                     dayMap[key].fulfilledItems += 1;
@@ -639,31 +693,26 @@
                                     else dayMap[key].fulfilledItemsNormal += 1;
                                 }
 
-                                // Sold (Invoiced) check based on demandinvoicedetail relation
                                 const invDetails = Array.isArray(di.demandinvoicedetail) ? di.demandinvoicedetail : (di.demandinvoicedetail ? [di.demandinvoicedetail] : []);
                                 
                                 if (invDetails.length > 0) {
                                     dayMap[key].soldItems += 1;
                                     
-                                    // Record unique demands that led to sales
                                     if (!invoicedDemandsSet.has(di.demandid)) {
                                         invoicedDemandsSet.add(di.demandid);
                                         dayMap[key].salesCount += 1;
                                         if (isSub) dayMap[key].salesSub += 1;
                                         else dayMap[key].salesNormal += 1;
 
-                                        // Identify First-Time Buyers
                                         const uid = demandUserIdMap.get(di.demandid);
                                         if (uid && !periodBuyersSet.has(uid)) {
                                             periodBuyersSet.add(uid);
-                                            // If they don't exist in past demands, they are brand new buyers!
                                             if (!returningUserIds.has(uid)) {
                                                 dayMap[key].newBuyers += 1;
                                             }
                                         }
                                     }
 
-                                    // Calculate GMV for this specific sold item
                                     invDetails.forEach(detail => {
                                         const qty = Number(detail.quantity) || 0;
                                         const price = Number(detail.sales_price) || 0;
@@ -675,21 +724,18 @@
                                     });
                                 }
                                 
-                                // Logs Analysis (Delays)
                                 const logs = (demandLogs || []).filter(l => String(l.demand_item_id) === String(di.id));
                                 if(logs.length > 0) {
-                                    // 1. First Response Time (Time from item creation to first log)
                                     const firstLogTime = new Date(Math.min(...logs.map(l => new Date(l.created_at))));
-                                    const responseDiff = (firstLogTime - gDate) / (1000 * 60 * 60); // Hours
+                                    // Use Working Hours for Delays as well to be consistent
+                                    const responseDiff = calculateWorkingHours(gDate, firstLogTime);
                                     if (responseDiff >= 0) {
                                         dayMap[key].responseDelays.push(responseDiff);
                                         if (isSub) dayMap[key].responseDelaysSub.push(responseDiff);
                                         else dayMap[key].responseDelaysNormal.push(responseDiff);
                                     }
 
-                                    // 2. Fulfillment Time
                                     if (isFulfilled) {
-                                        // Find the log where status changed to fulfilled
                                         const fLogs = logs.filter(l => {
                                             const nv = typeof l.new_values === 'string' ? JSON.parse(l.new_values || '{}') : (l.new_values || {});
                                             return nv.demandstatusid && fulfilledStatusIds.has(nv.demandstatusid);
@@ -699,12 +745,11 @@
                                         if (fLogs.length > 0) {
                                             fulfilledLogTime = new Date(Math.min(...fLogs.map(l => new Date(l.created_at))));
                                         } else {
-                                            // Fallback if status changed but log doesn't clearly show it in new_values
                                             fulfilledLogTime = new Date(Math.max(...logs.map(l => new Date(l.created_at))));
                                         }
 
                                         if (fulfilledLogTime) {
-                                            const fulfillDiff = (fulfilledLogTime - gDate) / (1000 * 60 * 60); // Hours
+                                            const fulfillDiff = calculateWorkingHours(gDate, fulfilledLogTime);
                                             if (fulfillDiff >= 0) {
                                                 dayMap[key].fulfillmentDelays.push(fulfillDiff);
                                                 if (isSub) dayMap[key].fulfillmentDelaysSub.push(fulfillDiff);
@@ -745,7 +790,6 @@
                 if (!dbData.length) return null;
                 const sum = (k) => dbData.reduce((a,b) => a + (b[k] || 0), 0);
                 
-                // Helper to calculate averages for specific delay arrays
                 const calcAvg = (arrKey) => {
                     const count = dbData.reduce((a,b) => a + (b[arrKey] ? b[arrKey].length : 0), 0);
                     const total = dbData.reduce((a,b) => a + (b[arrKey] ? b[arrKey].reduce((x,y)=>x+y,0) : 0), 0);
@@ -758,20 +802,16 @@
                 const fulfilledItemsSub = sum('fulfilledItemsSub');
 
                 return {
-                    // Demands
                     demandsNormal: sum('demandsNormal'),
                     demandsSub: sum('demandsSub'),
                     totalDemands: sum('demandsNormal') + sum('demandsSub'),
-                    // Followups
                     followupsNormal: sum('followupsNormal'),
                     followupsSub: sum('followupsSub'),
                     totalFollowups: sum('followupsNormal') + sum('followupsSub'),
-                    // Users
                     newCustomers: sum('newCustomers'),
                     newSuppliers: sum('newSuppliers'),
                     totalNewUsers: sum('newCustomers') + sum('newSuppliers'),
                     newBuyers: sum('newBuyers'),
-                    // Demand Items
                     totalItems: sum('totalItems'),
                     itemsNormal: itemsNormal,
                     itemsSub: itemsSub,
@@ -787,7 +827,6 @@
                     fulfillmentDelayHours: calcAvg('fulfillmentDelays'),
                     fulfillmentDelayAvgNormal: calcAvg('fulfillmentDelaysNormal'),
                     fulfillmentDelayAvgSub: calcAvg('fulfillmentDelaysSub'),
-                    // Sales & Funnel
                     salesCount: sum('salesCount'),
                     salesNormal: sum('salesNormal'),
                     salesSub: sum('salesSub'),
@@ -886,7 +925,7 @@
                     {/* Error Message */}
                     {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200"><i className="fa-solid fa-triangle-exclamation ml-2"></i>خطا در بارگذاری دیتابیس: استفاده از دیتای نمونه. ({error})</div>}
 
-                    {/* Section 1: Overview & Sales (Parent) */}
+                    {/* Section 1: Overview & Sales */}
                     <div>
                         <h2 className="text-base sm:text-lg font-bold text-slate-700 mb-3 sm:mb-4 flex items-center gap-2">
                             <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i className="fa-solid fa-layer-group"></i></span>
@@ -1138,33 +1177,50 @@
                         </h2>
                         
                         <div className="glass-card rounded-2xl p-0 overflow-hidden fade-in border-r-4 border-r-red-500 w-full mb-8">
-                            <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+                            <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                 <div>
                                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                        تقاضاهای بدون اقدام (بیش از ۴۸ ساعت)
-                                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs font-en">{isLoading ? '...' : unactedDemands.length}</span>
+                                        تقاضاهای بدون اقدام و معطل (بیش از ۴۸ ساعت کاری)
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-1">تقاضاهایی که در این دوره ثبت شده‌اند و بیش از ۲ روز از ثبت آن‌ها گذشته اما هنوز هیچ واکنش/عملیاتی روی آن‌ها ثبت نشده است.</p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        تقاضاهایی که بیش از ۴۸ ساعت کاری (بدون احتساب روزهای جمعه) از ثبت آن‌ها گذشته و هیچ عملیاتی روی آن‌ها انجام نشده است.
+                                    </p>
+                                </div>
+                                
+                                <div className="flex bg-slate-100 p-1 rounded-xl shrink-0 self-end sm:self-auto">
+                                    <button 
+                                        onClick={() => setUnactedTab('period')}
+                                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'period' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                    >
+                                        در این دوره ({isLoading ? '...' : unactedData.period.length})
+                                    </button>
+                                    <button 
+                                        onClick={() => setUnactedTab('overall')}
+                                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${unactedTab === 'overall' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                    >
+                                        کل سیستم ({isLoading ? '...' : unactedData.overall.length})
+                                    </button>
                                 </div>
                             </div>
                             
                             <div className="max-h-[300px] overflow-y-auto p-4 sm:p-5 bg-slate-50/50">
                                 {isLoading ? (
                                     <div className="text-center py-8 text-slate-400">در حال بررسی...</div>
-                                ) : unactedDemands.length === 0 ? (
+                                ) : unactedData[unactedTab].length === 0 ? (
                                     <div className="text-center py-8 text-slate-400">
                                         <i className="fa-solid fa-check-circle text-3xl mb-2 text-emerald-400"></i>
-                                        <p className="text-sm">همه تقاضاهای این دوره در زمان مقرر بررسی شده‌اند.</p>
+                                        <p className="text-sm">همه تقاضاهای موجود در این لیست بررسی شده‌اند و پرونده بازِ معطلی وجود ندارد.</p>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                        {unactedDemands.map(d => {
+                                        {unactedData[unactedTab].map(d => {
                                             const gDate = new Date(d.createdat);
                                             const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
                                             const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
                                             const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
                                             
-                                            const hoursPassed = Math.floor((Date.now() - gDate.getTime()) / (1000 * 60 * 60));
+                                            // نمایش زمان معطلی با احتساب ساعات کاری (برای دقت در داشبورد)
+                                            const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
                                             
                                             return (
                                                 <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
@@ -1175,7 +1231,7 @@
                                                     <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
                                                         <i className="fa-regular fa-clock"></i> {dateStr}
                                                     </div>
-                                                    <div className="text-[11px] text-red-500 font-bold flex items-center gap-1">
+                                                    <div className="text-[11px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
                                                         <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
                                                     </div>
                                                 </div>
