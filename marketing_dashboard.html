@@ -264,6 +264,9 @@
                     setIsLoading(true);
                     setError(null);
                     try {
+                        // Safe chunk size to avoid 414 URI Too Long errors
+                        const SAFE_CHUNK_SIZE = 100;
+
                         let startMonth = 1, endMonth = 12, startDay = 1, endDay = 29;
                         let startDoy = 1, endDoy = 365;
 
@@ -491,7 +494,7 @@
                         if (err1) throw new Error(`خطا در جدول تقاضا: ${err1.message}`);
                         if (err2) throw new Error(`خطا در جدول آیتم‌ها: ${err2.message}`);
 
-                        // 5. Fetch Subscriptions to categorize users
+                        // 5. Fetch Subscriptions to categorize users (Safe Chunking)
                         let subscribedUsers = new Set();
                         const allUserIds = new Set();
                         
@@ -501,9 +504,8 @@
                         let uniqueUsersArray = [];
                         if (allUserIds.size > 0) {
                             uniqueUsersArray = Array.from(allUserIds);
-                            const chunkSize = 500; 
-                            for (let i = 0; i < uniqueUsersArray.length; i += chunkSize) {
-                                const chunk = uniqueUsersArray.slice(i, i + chunkSize);
+                            for (let i = 0; i < uniqueUsersArray.length; i += SAFE_CHUNK_SIZE) {
+                                const chunk = uniqueUsersArray.slice(i, i + SAFE_CHUNK_SIZE);
                                 const { data: subsData } = await supabase
                                     .from('user_subscription_history')
                                     .select('user_id')
@@ -512,11 +514,11 @@
                             }
                         }
 
-                        // 6. Find Returning Buyers
+                        // 6. Find Returning Buyers (Safe Chunking)
                         let returningUserIds = new Set();
                         if (uniqueUsersArray.length > 0) {
-                            for (let i = 0; i < uniqueUsersArray.length; i += 500) {
-                                const chunk = uniqueUsersArray.slice(i, i + 500);
+                            for (let i = 0; i < uniqueUsersArray.length; i += SAFE_CHUNK_SIZE) {
+                                const chunk = uniqueUsersArray.slice(i, i + SAFE_CHUNK_SIZE);
                                 const { data: pastD } = await supabase
                                     .from('demand')
                                     .select('customeruserid')
@@ -532,14 +534,14 @@
                         // ==============================================================
                         const now = new Date();
                         
-                        // الف) استخراج ۵۰۰۰ تقاضای اخیر (برای پوشش کل تقاضاهای باز از گذشته تا به امروز)
+                        // الف) استخراج 2000 تقاضای اخیر (کاهش حجم برای جلوگیری از پر شدن حافظه)
                         const { data: allRecentDemands } = await supabase
                             .from('demand')
                             .select('id, createdat, is_emergency')
                             .eq('isdeleted', false)
                             .lte('createdat', now.toISOString())
                             .order('createdat', { ascending: false })
-                            .limit(5000);
+                            .limit(2000);
 
                         // ب) فیلتر کردن تقاضاهایی که بیش از 48 ساعت کاری از آنها گذشته است
                         const candidateDemands = (allRecentDemands || []).filter(d => {
@@ -549,25 +551,22 @@
 
                         let allUnactedOverall = [];
                         
-                        // ج) بررسی اینکه آیا این تقاضاها "اقدامی" داشته‌اند یا خیر
+                        // ج) بررسی اینکه آیا این تقاضاها "اقدامی" داشته‌اند یا خیر (با چانک‌بندی امن)
                         if (candidateDemands.length > 0) {
                             const candidateIds = candidateDemands.map(d => d.id);
                             
-                            // واکشی آیتم‌های تقاضاهای کاندید
-                            const chunkSize = 800;
                             let candItems = [];
-                            for(let i=0; i < candidateIds.length; i+= chunkSize) {
-                                const chunk = candidateIds.slice(i, i+chunkSize);
+                            for(let i=0; i < candidateIds.length; i+= SAFE_CHUNK_SIZE) {
+                                const chunk = candidateIds.slice(i, i + SAFE_CHUNK_SIZE);
                                 const { data: ci } = await supabase.from('demand_item').select('id, demandid').in('demandid', chunk);
                                 if(ci) candItems.push(...ci);
                             }
 
-                            // واکشی لاگ‌های مربوط به آیتم‌های کاندید
                             const itemIds = candItems.map(i => i.id);
                             let candLogs = [];
                             if (itemIds.length > 0) {
-                                for(let i=0; i < itemIds.length; i+= chunkSize) {
-                                    const chunk = itemIds.slice(i, i+chunkSize);
+                                for(let i=0; i < itemIds.length; i+= SAFE_CHUNK_SIZE) {
+                                    const chunk = itemIds.slice(i, i + SAFE_CHUNK_SIZE);
                                     const { data: logsChunk } = await supabase.from('demand_item_log').select('demand_item_id').in('demand_item_id', chunk);
                                     if(logsChunk) candLogs.push(...logsChunk);
                                 }
@@ -575,7 +574,6 @@
 
                             const logItemIds = new Set(candLogs.map(l => l.demand_item_id));
 
-                            // بررسی نهایی: تقاضایی که هیچ آیتمی ندارد، یا آیتم‌هایش هیچ لاگی ندارند -> بدون اقدام است
                             candidateDemands.forEach(d => {
                                 const itemsForD = candItems.filter(ci => ci.demandid === d.id);
                                 let hasAction = false;
@@ -588,10 +586,9 @@
                             });
                         }
 
-                        // مرتب‌سازی بر اساس قدیمی‌ترین به جدیدترین برای نمایش در لیست
+                        // مرتب‌سازی بر اساس قدیمی‌ترین به جدیدترین برای نمایش
                         allUnactedOverall.sort((a, b) => new Date(a.createdat) - new Date(b.createdat));
 
-                        // تفکیک تقاضاهای بدون اقدامِ مربوط به دوره فعلی از کل
                         const periodStartMs = new Date(startDate).getTime();
                         const periodEndMs = new Date(endDate).getTime();
 
@@ -1212,32 +1209,40 @@
                                         <p className="text-sm">همه تقاضاهای موجود در این لیست بررسی شده‌اند و پرونده بازِ معطلی وجود ندارد.</p>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                        {unactedData[unactedTab].map(d => {
-                                            const gDate = new Date(d.createdat);
-                                            const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
-                                            const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-                                            const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
-                                            
-                                            // نمایش زمان معطلی با احتساب ساعات کاری (برای دقت در داشبورد)
-                                            const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
-                                            
-                                            return (
-                                                <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{d.id.substring(0, 8)}</span></span>
-                                                        {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
+                                    <>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                            {unactedData[unactedTab].slice(0, 60).map(d => {
+                                                const gDate = new Date(d.createdat);
+                                                const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
+                                                const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+                                                const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
+                                                
+                                                // نمایش زمان معطلی با احتساب ساعات کاری (برای دقت در داشبورد)
+                                                const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
+                                                
+                                                return (
+                                                    <div key={d.id} className="bg-white border border-red-100 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="text-xs font-bold text-slate-700">کد: <span className="font-en text-brand-600">{d.id.substring(0, 8)}</span></span>
+                                                            {d.is_emergency && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">فوری</span>}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
+                                                            <i className="fa-regular fa-clock"></i> {dateStr}
+                                                        </div>
+                                                        <div className="text-[11px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
+                                                            <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
-                                                        <i className="fa-regular fa-clock"></i> {dateStr}
-                                                    </div>
-                                                    <div className="text-[11px] text-red-500 font-bold flex items-center gap-1" title="بدون احتساب روزهای جمعه">
-                                                        <i className="fa-solid fa-hourglass-half"></i> معطل: <span className="font-en">{hoursPassed}h</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* Pagination / View More placeholder limit rendering */}
+                                        {unactedData[unactedTab].length > 60 && (
+                                            <div className="mt-4 bg-white/50 border border-slate-200 border-dashed rounded-xl p-3 flex items-center justify-center text-slate-500 text-xs font-bold shadow-sm">
+                                                و {formatNumber(unactedData[unactedTab].length - 60)} مورد دیگر ...
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
