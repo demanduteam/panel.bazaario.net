@@ -112,13 +112,13 @@
         // 2. Helper Functions & Config
         // ==========================================
         const formatCurrency = (value) => {
-            if (!value) return '۰ تومان';
-            if (value >= 1e9) return (value / 1e9).toFixed(2) + ' میلیارد تومان';
-            if (value >= 1e6) return (value / 1e6).toFixed(1) + ' میلیون تومان';
-            return value.toLocaleString('fa-IR') + ' تومان';
+            if (!value) return '0 تومان';
+            if (value >= 1e9) return (value / 1e9).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' میلیارد تومان';
+            if (value >= 1e6) return (value / 1e6).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' میلیون تومان';
+            return value.toLocaleString('en-US') + ' تومان';
         };
 
-        const formatNumber = (num) => Number(num || 0).toLocaleString('fa-IR');
+        const formatNumber = (num) => Number(num || 0).toLocaleString('en-US');
 
         const calculateWorkingHours = (startDate, endDate) => {
             if (startDate >= endDate) return 0;
@@ -292,14 +292,20 @@
             const [activeTab, setActiveTab] = React.useState('dashboard');
 
             // --- OKR States ---
-            const [okrs, setOkrs] = React.useState([]); // Removed localStorage initialization
+            const [okrs, setOkrs] = React.useState([]);
+            
             // Form & View Filters for OKR
             const [viewOkrYear, setViewOkrYear] = React.useState(1405);
             const [viewOkrSeason, setViewOkrSeason] = React.useState(1);
             const [newOkrOwner, setNewOkrOwner] = React.useState('');
             const [newOkrMetric, setNewOkrMetric] = React.useState('gmv');
-            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_growth'); 
+            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_average'); // cumulative or weekly_average
+            const [newOkrBaseline, setNewOkrBaseline] = React.useState('');
             const [newOkrTarget, setNewOkrTarget] = React.useState('');
+            
+            // Smart Suggester States
+            const [baselineSuggestions, setBaselineSuggestions] = React.useState(null);
+            const [isFetchingSuggestions, setIsFetchingSuggestions] = React.useState(false);
             const [isSubmittingOkr, setIsSubmittingOkr] = React.useState(false);
             
             const [okrDailyStats, setOkrDailyStats] = React.useState([]);
@@ -775,6 +781,63 @@
                 return weeks;
             }, [okrDailyStats, viewOkrYear, viewOkrSeason]);
             
+            // --- OKR Smart Baseline Suggester ---
+            React.useEffect(() => {
+                if (!isAuthorized || activeTab !== 'okr') return;
+
+                const fetchPreviousSeasonStats = async () => {
+                    setIsFetchingSuggestions(true);
+                    setBaselineSuggestions(null);
+                    try {
+                        let prevSeason = viewOkrSeason - 1;
+                        let prevYear = viewOkrYear;
+                        if (prevSeason === 0) {
+                            prevSeason = 4;
+                            prevYear -= 1;
+                        }
+
+                        const weeks = getSeasonWeeks(prevYear, prevSeason);
+                        if (weeks.length === 0) return;
+
+                        const startDateStr = weeks[0].start.toISOString().split('T')[0];
+                        const endDateStr = weeks[weeks.length - 1].end.toISOString().split('T')[0];
+
+                        const { data, error } = await supabase
+                            .from('marketing_daily_stats')
+                            .select('*')
+                            .gte('record_date', startDateStr)
+                            .lte('record_date', endDateStr);
+
+                        if (error || !data) return;
+
+                        const weeklyTotals = weeks.map(w => {
+                            const daysInWeek = data.filter(d => {
+                                const dDate = new Date(d.record_date);
+                                dDate.setHours(0,0,0,0);
+                                return dDate >= w.start && dDate <= w.end;
+                            });
+                            return computeMetricFromStats(daysInWeek, newOkrMetric);
+                        });
+
+                        const nonZeroWeeks = weeklyTotals.filter(v => v > 0);
+                        if (nonZeroWeeks.length === 0) return;
+
+                        const sum = nonZeroWeeks.reduce((a,b)=>a+b, 0);
+                        const avg = sum / nonZeroWeeks.length;
+                        const min = Math.min(...nonZeroWeeks);
+                        const max = Math.max(...nonZeroWeeks);
+
+                        setBaselineSuggestions({ avg, min, max });
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        setIsFetchingSuggestions(false);
+                    }
+                };
+                
+                fetchPreviousSeasonStats();
+            }, [newOkrMetric, viewOkrYear, viewOkrSeason, activeTab, isAuthorized]);
+
             // --- OKR DB Handlers ---
             const updateOkr = async (id, updaterFn) => {
                 setOkrs(prev => {
@@ -804,36 +867,14 @@
 
             const handleAddOkr = async (e) => {
                 e.preventDefault();
-                if(!newOkrTarget || !newOkrOwner) return;
+                if(!newOkrTarget || !newOkrOwner || newOkrBaseline === '') return;
                 
                 setIsSubmittingOkr(true);
-                let baselineVal = 0;
-
-                try {
-                    if (newOkrTargetType === 'weekly_growth') {
-                        const weeks = getSeasonWeeks(viewOkrYear, viewOkrSeason);
-                        const week1 = weeks[0];
-                        
-                        const startDateStr = week1.start.toISOString().split('T')[0];
-                        const endDateStr = week1.end.toISOString().split('T')[0];
-
-                        const { data: wStats } = await supabase
-                            .from('marketing_daily_stats')
-                            .select('*')
-                            .gte('record_date', startDateStr)
-                            .lte('record_date', endDateStr);
-
-                        baselineVal = computeMetricFromStats(wStats, newOkrMetric);
-                    }
-                } catch (err) {
-                    console.error("Error fetching baseline:", err);
-                    baselineVal = 0;
-                }
 
                 const { data: insertedData, error: insertError } = await supabase.from('marketing_okrs').insert([{
                     metric_key: newOkrMetric,
                     target_type: newOkrTargetType,
-                    baseline: baselineVal,
+                    baseline: Number(newOkrBaseline),
                     target: Number(newOkrTarget),
                     target_year: viewOkrYear,
                     target_season: viewOkrSeason,
@@ -864,6 +905,7 @@
                 
                 setNewOkrTarget('');
                 setNewOkrOwner('');
+                setNewOkrBaseline('');
                 setIsSubmittingOkr(false);
             };
 
@@ -990,7 +1032,7 @@
 
                                         <select 
                                             value={filterType} onChange={(e) => setFilterType(e.target.value)}
-                                            className="flex-1 sm:flex-none bg-white border border-slate-200 text-xs sm:text-sm rounded-xl px-2 sm:px-4 py-2 sm:py-2.5 font-vazir font-semibold focus:outline-none focus:border-brand-400"
+                                            className="flex-1 sm:flex-none bg-white border border-slate-200 text-xs sm:text-sm rounded-xl px-2 sm:px-4 py-2 py-2.5 font-vazir font-semibold focus:outline-none focus:border-brand-400"
                                         >
                                             <option value="seasonal">فصلی</option><option value="monthly">ماهانه</option><option value="weekly">هفتگی</option>
                                         </select>
@@ -1482,7 +1524,7 @@
 
                                                         const gDate = new Date(d.createdat);
                                                         const j = jalaali.toJalaali(gDate.getFullYear(), gDate.getMonth() + 1, gDate.getDate());
-                                                        const timeStr = gDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+                                                        const timeStr = gDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
                                                         const dateStr = `${j.jy}/${String(j.jm).padStart(2,'0')}/${String(j.jd).padStart(2,'0')} - ${timeStr}`;
                                                         const hoursPassed = Math.floor(calculateWorkingHours(gDate, new Date()));
                                                         
@@ -1582,7 +1624,7 @@
                                     </div>
                                 )}
                                 <h3 className="text-sm font-bold text-slate-700 mb-4">تعریف هدف جدید</h3>
-                                <form onSubmit={handleAddOkr} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 items-end">
+                                <form onSubmit={handleAddOkr} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4 items-start">
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-xs text-slate-500 font-bold">سال</label>
                                         <select value={viewOkrYear} onChange={e => setViewOkrYear(Number(e.target.value))} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-en focus:outline-none focus:border-brand-400 cursor-pointer">
@@ -1598,7 +1640,7 @@
                                             <option value={4}>زمستان</option>
                                         </select>
                                     </div>
-                                    <div className="flex flex-col gap-1.5">
+                                    <div className="flex flex-col gap-1.5 xl:col-span-2">
                                         <label className="text-xs text-slate-500 font-bold">شاخص کلیدی (KR)</label>
                                         <select value={newOkrMetric} onChange={e => setNewOkrMetric(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400 cursor-pointer">
                                             {AVAILABLE_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
@@ -1607,26 +1649,51 @@
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-xs text-slate-500 font-bold">نوع هدف‌گذاری</label>
                                         <select value={newOkrTargetType} onChange={e => setNewOkrTargetType(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400 cursor-pointer">
-                                            <option value="weekly_growth">رشد هفتگی (مبنا: هفته اول)</option>
+                                            <option value="weekly_average">میانگین هفتگی</option>
                                             <option value="cumulative">تجمعی (مجموع کل فصل)</option>
                                         </select>
                                     </div>
-                                    <div className="flex flex-col gap-1.5">
+                                    <div className="flex flex-col gap-1.5 xl:col-span-2">
                                         <label className="text-xs text-slate-500 font-bold">مسئول (Owner)</label>
                                         <input type="text" value={newOkrOwner} onChange={e => setNewOkrOwner(e.target.value)} placeholder="مثال: تیم فروش" required className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-vazir focus:outline-none focus:border-brand-400" />
                                     </div>
-                                    <div className="flex flex-col gap-1.5 relative">
+                                    <div className="flex flex-col gap-1.5 relative z-20">
+                                        <label className="text-xs text-slate-500 font-bold">شروع (Baseline)</label>
+                                        <input type="number" step="any" value={newOkrBaseline} onChange={e => setNewOkrBaseline(e.target.value)} required placeholder="نقطه شروع" className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-en focus:outline-none focus:border-brand-400" />
+                                        
+                                        {/* Smart Suggestions Dropdown */}
+                                        {baselineSuggestions && (
+                                            <div className="absolute top-[100%] right-0 mt-1.5 w-[260px] bg-white border border-indigo-100 rounded-xl shadow-lg p-3 z-30">
+                                                <div className="text-xs text-indigo-700 mb-2 font-bold flex items-center gap-1.5 border-b border-indigo-50 pb-2">
+                                                    <i className="fa-solid fa-lightbulb"></i> عملکرد فصل قبل
+                                                </div>
+                                                <div className="flex flex-col gap-1.5 text-[11px]">
+                                                    <button type="button" onClick={() => setNewOkrBaseline(baselineSuggestions.avg)} className="flex justify-between items-center bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors w-full text-right">
+                                                        <span>میانگین هفتگی:</span> <span className="font-en font-bold">{formatNumber(Math.round(baselineSuggestions.avg))}</span>
+                                                    </button>
+                                                    <button type="button" onClick={() => setNewOkrBaseline(baselineSuggestions.max)} className="flex justify-between items-center bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-colors w-full text-right">
+                                                        <span>بیشترین عملکرد:</span> <span className="font-en font-bold">{formatNumber(Math.round(baselineSuggestions.max))}</span>
+                                                    </button>
+                                                    <button type="button" onClick={() => setNewOkrBaseline(baselineSuggestions.min)} className="flex justify-between items-center bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg hover:bg-rose-100 transition-colors w-full text-right">
+                                                        <span>کمترین عملکرد:</span> <span className="font-en font-bold">{formatNumber(Math.round(baselineSuggestions.min))}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {isFetchingSuggestions && (
+                                            <div className="absolute top-[100%] right-0 mt-1.5 text-[10px] text-slate-400 flex items-center gap-1">
+                                                <i className="fa-solid fa-spinner fa-spin"></i> در حال پردازش فصل قبل...
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
                                         <label className="text-xs text-slate-500 font-bold">هدف (Target)</label>
                                         <input type="number" step="any" value={newOkrTarget} onChange={e => setNewOkrTarget(e.target.value)} placeholder="مقدار هدف نهایی" required className="bg-slate-50 border border-slate-200 text-sm rounded-xl px-3 py-2.5 font-en focus:outline-none focus:border-brand-400" />
                                     </div>
-                                    <button type="submit" disabled={isSubmittingOkr} className="xl:col-span-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-sm py-2.5 px-4 rounded-xl transition-colors h-[42px] flex items-center justify-center gap-2 shadow-sm">
+                                    <button type="submit" disabled={isSubmittingOkr} className="xl:col-span-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-sm py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm mt-2">
                                         <i className="fa-solid fa-plus"></i> {isSubmittingOkr ? 'در حال ثبت...' : 'ثبت هدف و رسم نمودار'}
                                     </button>
                                 </form>
-                                <div className="mt-3 text-[10px] text-slate-400 flex items-center gap-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                    <i className="fa-solid fa-robot"></i> 
-                                    <span>نقطه شروع (Baseline) به صورت خودکار محاسبه می‌شود. برای اهداف «تجمعی» نقطه شروع صفر است و برای «رشد هفتگی»، عملکردِ واقعی هفته اول از دیتابیس استخراج می‌شود.</span>
-                                </div>
                             </div>
 
                             {/* Active OKRs Grid */}
@@ -1643,7 +1710,9 @@
                                         // Generate Data for the ComposedChart
                                         const totalWeeks = okrWeeksData.length;
                                         let runningActual = 0;
-                                        let lastValidActual = 0;
+                                        let sumOfElapsedWeeks = 0;
+                                        let elapsedWeeksCount = 0;
+                                        let lastValidActual = 0; // For cumulative
                                         
                                         const now = new Date();
                                         
@@ -1653,8 +1722,8 @@
                                             let targetVal = 0;
                                             if (okr.targetType === 'cumulative') {
                                                 targetVal = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1)) * index;
-                                                runningActual += weeklyActual;
                                             } else {
+                                                // For weekly average, drawing a slope from baseline to target
                                                 targetVal = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1)) * index;
                                             }
                                             
@@ -1662,8 +1731,15 @@
                                             let finalActual = null;
                                             
                                             if (!isFuture) {
-                                                finalActual = okr.targetType === 'cumulative' ? runningActual : weeklyActual;
-                                                lastValidActual = finalActual;
+                                                if (okr.targetType === 'cumulative') {
+                                                    runningActual += weeklyActual;
+                                                    finalActual = runningActual;
+                                                    lastValidActual = runningActual;
+                                                } else {
+                                                    finalActual = weeklyActual;
+                                                    sumOfElapsedWeeks += weeklyActual;
+                                                    elapsedWeeksCount++;
+                                                }
                                             }
                                             
                                             return {
@@ -1673,13 +1749,20 @@
                                             };
                                         });
 
+                                        let metricCurrentVal = 0;
+                                        if (okr.targetType === 'cumulative') {
+                                            metricCurrentVal = lastValidActual;
+                                        } else {
+                                            metricCurrentVal = elapsedWeeksCount > 0 ? (sumOfElapsedWeeks / elapsedWeeksCount) : 0;
+                                        }
+
                                         let rawProgress = 0;
                                         if (okr.target > okr.baseline) {
-                                            rawProgress = ((lastValidActual - okr.baseline) / (okr.target - okr.baseline)) * 100;
+                                            rawProgress = ((metricCurrentVal - okr.baseline) / (okr.target - okr.baseline)) * 100;
                                         } else if (okr.target < okr.baseline) {
-                                            rawProgress = ((okr.baseline - lastValidActual) / (okr.baseline - okr.target)) * 100;
+                                            rawProgress = ((okr.baseline - metricCurrentVal) / (okr.baseline - okr.target)) * 100;
                                         } else {
-                                            rawProgress = lastValidActual >= okr.target ? 100 : 0;
+                                            rawProgress = metricCurrentVal >= okr.target ? 100 : 0;
                                         }
                                         
                                         const progressPercent = Math.max(0, Math.min(100, rawProgress));
@@ -1696,7 +1779,7 @@
                                                     <div className="flex flex-col gap-2">
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200">
-                                                                {okr.targetType === 'cumulative' ? 'تجمعی' : 'رشد هفتگی'}
+                                                                {okr.targetType === 'cumulative' ? 'تجمعی' : 'میانگین هفتگی'}
                                                             </span>
                                                             {okr.owner && (
                                                                 <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md font-bold border border-indigo-100 flex items-center gap-1">
@@ -1739,8 +1822,8 @@
                                                         <span className="text-slate-600">{formatOkrValue(okr.baseline, okr.metricKey)}</span>
                                                     </div>
                                                     <div className="flex flex-col text-center">
-                                                        <span className="text-slate-400 mb-0.5 font-vazir">وضعیت فعلی</span>
-                                                        <span className={`text-sm ${isSuccess ? 'text-emerald-600 font-black' : 'text-indigo-600 font-bold'}`}>{formatOkrValue(lastValidActual, okr.metricKey)}</span>
+                                                        <span className="text-slate-400 mb-0.5 font-vazir" title={okr.targetType === 'weekly_average' ? 'میانگین عملکرد هفته‌های سپری شده' : 'مجموع عملکرد تاکنون'}>وضعیت فعلی</span>
+                                                        <span className={`text-sm ${isSuccess ? 'text-emerald-600 font-black' : 'text-indigo-600 font-bold'}`}>{formatOkrValue(metricCurrentVal, okr.metricKey)}</span>
                                                     </div>
                                                     <div className="flex flex-col text-left">
                                                         <span className="text-slate-400 mb-0.5 font-vazir">تارگت نهایی</span>
@@ -1839,7 +1922,11 @@
                                                                             {action.text}
                                                                         </p>
                                                                         <span className="text-[10px] text-slate-400 font-en bg-slate-100 px-2 py-0.5 rounded">
-                                                                            {new Date(action.dateAdded).toLocaleDateString('fa-IR')}
+                                                                            {(() => {
+                                                                                const aD = new Date(action.dateAdded);
+                                                                                const aJ = window.jalaali.toJalaali(aD.getFullYear(), aD.getMonth() + 1, aD.getDate());
+                                                                                return `${aJ.jy}/${String(aJ.jm).padStart(2,'0')}/${String(aJ.jd).padStart(2,'0')}`;
+                                                                            })()}
                                                                         </span>
                                                                     </div>
                                                                     
@@ -1927,7 +2014,13 @@
                                                                     <div className="text-[11px] font-bold text-slate-600">
                                                                         تغییر تارگت از <span className="font-en text-slate-400 line-through mx-1">{formatNumber(h.oldTarget)}</span> به <span className="font-en text-indigo-600 mx-1">{formatNumber(h.newTarget)}</span>
                                                                     </div>
-                                                                    <span className="text-[10px] text-slate-400 font-en bg-slate-50 px-2 py-0.5 rounded">{new Date(h.date).toLocaleDateString('fa-IR')}</span>
+                                                                    <span className="text-[10px] text-slate-400 font-en bg-slate-50 px-2 py-0.5 rounded">
+                                                                        {(() => {
+                                                                            const hD = new Date(h.date);
+                                                                            const hJ = window.jalaali.toJalaali(hD.getFullYear(), hD.getMonth() + 1, hD.getDate());
+                                                                            return `${hJ.jy}/${String(hJ.jm).padStart(2,'0')}/${String(hJ.jd).padStart(2,'0')}`;
+                                                                        })()}
+                                                                    </span>
                                                                 </div>
                                                                 <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
                                                                     <strong>دلیل:</strong> {h.reason}
