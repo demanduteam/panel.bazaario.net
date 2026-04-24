@@ -97,7 +97,7 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        const { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } = window.Recharts;
+        const { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } = window.Recharts;
         const jalaali = window.jalaali;
 
         // ==========================================
@@ -123,11 +123,9 @@
         const calculateWorkingHours = (startDate, endDate) => {
             if (startDate >= endDate) return 0;
             const totalMs = endDate.getTime() - startDate.getTime();
-            
             let fridaysMs = 0;
             let current = new Date(startDate);
             current.setHours(0, 0, 0, 0); 
-            
             let endDay = new Date(endDate);
             endDay.setHours(0, 0, 0, 0);
             
@@ -136,17 +134,14 @@
                     let fridayStart = new Date(current);
                     let fridayEnd = new Date(current);
                     fridayEnd.setHours(23, 59, 59, 999);
-                    
                     let overlapStart = Math.max(startDate.getTime(), fridayStart.getTime());
                     let overlapEnd = Math.min(endDate.getTime(), fridayEnd.getTime());
-                    
                     if (overlapStart < overlapEnd) {
                         fridaysMs += (overlapEnd - overlapStart);
                     }
                 }
                 current.setDate(current.getDate() + 1);
             }
-            
             return (totalMs - fridaysMs) / (1000 * 60 * 60);
         };
 
@@ -184,7 +179,6 @@
         // Engine to calculate a specific metric from an array of marketing_daily_stats
         const computeMetricFromStats = (dailyStats, metricKey) => {
             const sum = (k) => (dailyStats || []).reduce((acc, curr) => acc + (Number(curr[k]) || 0), 0);
-            
             switch(metricKey) {
                 case 'gmv': return sum('total_gmv');
                 case 'salesCount': return sum('sales_count');
@@ -244,7 +238,7 @@
         };
 
         // ==========================================
-        // 3. UI Components (Box Design)
+        // 3. UI Components
         // ==========================================
         const KpiBox = ({ title, value, subtitle, icon, color, isLoading }) => {
             const colorClasses = {
@@ -253,7 +247,6 @@
                 purple: 'bg-purple-50 text-purple-600 border-purple-100',
                 amber: 'bg-amber-50 text-amber-600 border-amber-100',
                 rose: 'bg-rose-50 text-rose-600 border-rose-100',
-                slate: 'bg-slate-50 text-slate-600 border-slate-200',
                 cyan: 'bg-cyan-50 text-cyan-600 border-cyan-100',
                 teal: 'bg-teal-50 text-teal-600 border-teal-100',
                 pink: 'bg-pink-50 text-pink-600 border-pink-100',
@@ -281,6 +274,182 @@
             );
         };
 
+        // Component: Individual OKR Card
+        const OkrCard = ({ okr, okrWeeksData, seasonNames, handleDeleteOkr, setReviewOkrId }) => {
+            // "pacing" = show weekly rate | "cumulative" = show full mountain
+            // Default to 'pacing' for both, but cumulative type allows toggling.
+            const [viewMode, setViewMode] = React.useState('pacing'); 
+            
+            const totalWeeks = okrWeeksData.length;
+            const now = new Date();
+            
+            let runningActual = 0;
+            let sumOfElapsedWeeks = 0;
+            let elapsedWeeksCount = 0;
+            let lastValidCumulativeActual = 0;
+            let lastValidPacingActual = 0;
+
+            const chartData = okrWeeksData.map((w, index) => {
+                const weeklyActual = computeMetricFromStats(w.records, okr.metricKey);
+                const isFuture = w.start > now;
+
+                // For a cumulative goal, the required pacing per week to reach the goal:
+                const requiredPacingPerWeek = (okr.target - okr.baseline) / (totalWeeks || 1);
+                
+                // For cumulative view, target goes from baseline to final target
+                const cumulativeTargetSlope = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1 || 1)) * index;
+                
+                // For weekly average growth, target slopes from week 1 baseline to final target
+                const weeklyGrowthTargetSlope = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1 || 1)) * index;
+
+                let finalActualCumul = null;
+                let finalActualPacing = null;
+
+                if (!isFuture) {
+                    runningActual += weeklyActual;
+                    sumOfElapsedWeeks += weeklyActual;
+                    elapsedWeeksCount++;
+                    
+                    finalActualCumul = runningActual;
+                    finalActualPacing = weeklyActual;
+                    
+                    lastValidCumulativeActual = finalActualCumul;
+                    lastValidPacingActual = finalActualPacing;
+                }
+                
+                return {
+                    name: w.weekNum,
+                    'هدف تجمعی': Number(cumulativeTargetSlope.toFixed(2)),
+                    'عملکرد تجمعی': finalActualCumul !== null ? Number(finalActualCumul.toFixed(2)) : null,
+                    'هدف سهم هفته': okr.targetType === 'cumulative' ? Number(requiredPacingPerWeek.toFixed(2)) : Number(weeklyGrowthTargetSlope.toFixed(2)),
+                    'عملکرد سهم هفته': finalActualPacing !== null ? Number(finalActualPacing.toFixed(2)) : null
+                };
+            });
+
+            let metricCurrentVal = 0;
+            if (okr.targetType === 'cumulative') {
+                metricCurrentVal = lastValidCumulativeActual;
+            } else {
+                metricCurrentVal = elapsedWeeksCount > 0 ? (sumOfElapsedWeeks / elapsedWeeksCount) : 0;
+            }
+
+            let rawProgress = 0;
+            if (okr.target > okr.baseline) {
+                rawProgress = ((metricCurrentVal - okr.baseline) / (okr.target - okr.baseline)) * 100;
+            } else if (okr.target < okr.baseline) {
+                rawProgress = ((okr.baseline - metricCurrentVal) / (okr.baseline - okr.target)) * 100;
+            } else {
+                rawProgress = metricCurrentVal >= okr.target ? 100 : 0;
+            }
+            
+            const progressPercent = Math.max(0, Math.min(100, rawProgress));
+            const isSuccess = rawProgress >= 100;
+
+            const actionsList = okr.actions || [];
+            const completedActions = actionsList.filter(a => a.isCompleted).length;
+
+            const isCumulativeView = viewMode === 'cumulative' && okr.targetType === 'cumulative';
+            const lineKey = isCumulativeView ? 'هدف تجمعی' : 'هدف سهم هفته';
+            const barKey = isCumulativeView ? 'عملکرد تجمعی' : 'عملکرد سهم هفته';
+
+            return (
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-card transition-all relative overflow-hidden group flex flex-col">
+                    <div className={`absolute top-0 right-0 w-1.5 h-full transition-colors ${isSuccess ? 'bg-emerald-400' : 'bg-indigo-400'}`}></div>
+                    
+                    <div className="flex justify-between items-start mb-4 pl-2">
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200">
+                                    فصل {seasonNames[okr.season]}
+                                </span>
+                                <span className="bg-indigo-50 text-indigo-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-indigo-100">
+                                    {okr.targetType === 'cumulative' ? 'تجمعی' : 'میانگین هفتگی'}
+                                </span>
+                                {okr.owner && (
+                                    <span className="bg-slate-50 text-slate-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200 flex items-center gap-1">
+                                        <i className="fa-solid fa-user-tie"></i> {okr.owner}
+                                    </span>
+                                )}
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold border ${isSuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                    {rawProgress.toFixed(1)}% پیشرفت
+                                </span>
+                            </div>
+                            <h4 className="font-bold text-slate-800 text-base">{AVAILABLE_METRICS.find(m => m.key === okr.metricKey)?.label || okr.metricKey}</h4>
+                        </div>
+                        
+                        <div className="flex gap-1">
+                            {okr.targetType === 'cumulative' && (
+                                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 ml-2">
+                                    <button 
+                                        onClick={() => setViewMode('pacing')}
+                                        className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${viewMode === 'pacing' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                        title="نمایش سهم هر هفته (Pacing)"
+                                    >
+                                        <i className="fa-solid fa-chart-simple"></i> سهم هفته
+                                    </button>
+                                    <button 
+                                        onClick={() => setViewMode('cumulative')}
+                                        className={`text-[10px] font-bold px-2 py-1 rounded-md transition-colors ${viewMode === 'cumulative' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}
+                                        title="نمایش صعود و انباشت تا پایان فصل"
+                                    >
+                                        <i className="fa-solid fa-chart-line"></i> تجمعی
+                                    </button>
+                                </div>
+                            )}
+                            <button onClick={() => handleDeleteOkr(okr.id)} className="text-slate-400 hover:text-red-500 transition-colors bg-slate-50 hover:bg-red-50 w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-slate-100" title="حذف این هدف">
+                                <i className="fa-solid fa-trash text-[10px]"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Weekly Trend Chart */}
+                    <div className="h-[200px] w-full mt-2 mb-4" dir="ltr">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} tickFormatter={(val) => `هفته ${val}`} />
+                                <Tooltip 
+                                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', fontFamily: 'Vazirmatn', textAlign: 'right', fontSize: '11px'}}
+                                    formatter={(val, name) => [formatNumber(val), name.includes('هدف') ? 'تارگت' : 'عملکرد واقعی']}
+                                    labelFormatter={(label) => `هفته ${label}`}
+                                />
+                                <Legend wrapperStyle={{fontSize: '10px', fontFamily: 'Vazirmatn'}} />
+                                <Bar dataKey={barKey} name="عملکرد واقعی" fill={isSuccess ? "#10b981" : "#818cf8"} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Line type="monotone" dataKey={lineKey} name="تارگت (هدف)" stroke="#f59e0b" strokeWidth={2} dot={{r: 3, fill: "#f59e0b", strokeWidth: 0}} activeDot={{r: 5}} />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Summary Stats */}
+                    <div className="flex justify-between text-[11px] font-en font-semibold bg-slate-50 p-3 rounded-xl border border-slate-100 mt-auto mb-4">
+                        <div className="flex flex-col">
+                            <span className="text-slate-400 mb-0.5 font-vazir" title="نقطه مبنا در ابتدای فصل">شروع (مبنا)</span>
+                            <span className="text-slate-600">{formatOkrValue(okr.baseline, okr.metricKey)}</span>
+                        </div>
+                        <div className="flex flex-col text-center">
+                            <span className="text-slate-400 mb-0.5 font-vazir" title={okr.targetType === 'weekly_average' ? 'میانگین عملکرد هفته‌های سپری شده' : 'مجموع عملکرد تاکنون'}>وضعیت فعلی</span>
+                            <span className={`text-sm ${isSuccess ? 'text-emerald-600 font-black' : 'text-indigo-600 font-bold'}`}>{formatOkrValue(metricCurrentVal, okr.metricKey)}</span>
+                        </div>
+                        <div className="flex flex-col text-left">
+                            <span className="text-slate-400 mb-0.5 font-vazir">تارگت نهایی</span>
+                            <span className="text-slate-800">{formatOkrValue(okr.target, okr.metricKey)}</span>
+                        </div>
+                    </div>
+
+                    {/* Review Button */}
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                        <div className="text-[10px] text-slate-500 font-bold flex items-center gap-1.5">
+                            <i className="fa-solid fa-list-check text-slate-400"></i>
+                            {actionsList.length === 0 ? 'بدون اکشن ثبت شده' : `${formatNumber(completedActions)} از ${formatNumber(actionsList.length)} اکشن انجام شده`}
+                        </div>
+                        <button onClick={() => setReviewOkrId(okr.id)} className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                            <i className="fa-solid fa-pen-to-square"></i> جلسه مرور و اکشن‌ها
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
         // ==========================================
         // 4. Main Dashboard Component
         // ==========================================
@@ -299,7 +468,7 @@
             const [viewOkrSeason, setViewOkrSeason] = React.useState(1);
             const [newOkrOwner, setNewOkrOwner] = React.useState('');
             const [newOkrMetric, setNewOkrMetric] = React.useState('gmv');
-            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_average'); // cumulative or weekly_average
+            const [newOkrTargetType, setNewOkrTargetType] = React.useState('weekly_average'); 
             const [newOkrBaseline, setNewOkrBaseline] = React.useState('');
             const [newOkrTarget, setNewOkrTarget] = React.useState('');
             
@@ -1706,144 +1875,16 @@
                                         <p>هیچ هدفی برای فصل {seasonNames[viewOkrSeason]} سال {viewOkrYear} ثبت نشده است.</p>
                                     </div>
                                 ) : (
-                                    currentSeasonOkrs.map(okr => {
-                                        // Generate Data for the ComposedChart
-                                        const totalWeeks = okrWeeksData.length;
-                                        let runningActual = 0;
-                                        let sumOfElapsedWeeks = 0;
-                                        let elapsedWeeksCount = 0;
-                                        let lastValidActual = 0; // For cumulative
-                                        
-                                        const now = new Date();
-                                        
-                                        const chartData = okrWeeksData.map((w, index) => {
-                                            const weeklyActual = computeMetricFromStats(w.records, okr.metricKey);
-                                            
-                                            let targetVal = 0;
-                                            if (okr.targetType === 'cumulative') {
-                                                targetVal = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1)) * index;
-                                            } else {
-                                                // For weekly average, drawing a slope from baseline to target
-                                                targetVal = okr.baseline + ((okr.target - okr.baseline) / (totalWeeks - 1)) * index;
-                                            }
-                                            
-                                            const isFuture = w.start > now;
-                                            let finalActual = null;
-                                            
-                                            if (!isFuture) {
-                                                if (okr.targetType === 'cumulative') {
-                                                    runningActual += weeklyActual;
-                                                    finalActual = runningActual;
-                                                    lastValidActual = runningActual;
-                                                } else {
-                                                    finalActual = weeklyActual;
-                                                    sumOfElapsedWeeks += weeklyActual;
-                                                    elapsedWeeksCount++;
-                                                }
-                                            }
-                                            
-                                            return {
-                                                name: w.weekNum,
-                                                'هدف': Number(targetVal.toFixed(2)),
-                                                'عملکرد': finalActual !== null ? Number(finalActual.toFixed(2)) : null
-                                            };
-                                        });
-
-                                        let metricCurrentVal = 0;
-                                        if (okr.targetType === 'cumulative') {
-                                            metricCurrentVal = lastValidActual;
-                                        } else {
-                                            metricCurrentVal = elapsedWeeksCount > 0 ? (sumOfElapsedWeeks / elapsedWeeksCount) : 0;
-                                        }
-
-                                        let rawProgress = 0;
-                                        if (okr.target > okr.baseline) {
-                                            rawProgress = ((metricCurrentVal - okr.baseline) / (okr.target - okr.baseline)) * 100;
-                                        } else if (okr.target < okr.baseline) {
-                                            rawProgress = ((okr.baseline - metricCurrentVal) / (okr.baseline - okr.target)) * 100;
-                                        } else {
-                                            rawProgress = metricCurrentVal >= okr.target ? 100 : 0;
-                                        }
-                                        
-                                        const progressPercent = Math.max(0, Math.min(100, rawProgress));
-                                        const isSuccess = rawProgress >= 100;
-
-                                        const actionsList = okr.actions || [];
-                                        const completedActions = actionsList.filter(a => a.isCompleted).length;
-
-                                        return (
-                                            <div key={okr.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-card transition-all relative overflow-hidden group flex flex-col">
-                                                <div className={`absolute top-0 right-0 w-1.5 h-full transition-colors ${isSuccess ? 'bg-emerald-400' : 'bg-indigo-400'}`}></div>
-                                                
-                                                <div className="flex justify-between items-start mb-4 pl-2">
-                                                    <div className="flex flex-col gap-2">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-md font-bold border border-slate-200">
-                                                                {okr.targetType === 'cumulative' ? 'تجمعی' : 'میانگین هفتگی'}
-                                                            </span>
-                                                            {okr.owner && (
-                                                                <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md font-bold border border-indigo-100 flex items-center gap-1">
-                                                                    <i className="fa-solid fa-user-tie"></i> {okr.owner}
-                                                                </span>
-                                                            )}
-                                                            <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold border ${isSuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
-                                                                {rawProgress.toFixed(1)}% پیشرفت
-                                                            </span>
-                                                        </div>
-                                                        <h4 className="font-bold text-slate-800 text-base">{AVAILABLE_METRICS.find(m => m.key === okr.metricKey)?.label || okr.metricKey}</h4>
-                                                    </div>
-                                                    <button onClick={() => handleDeleteOkr(okr.id)} className="text-slate-300 hover:text-red-500 transition-colors bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center shrink-0" title="حذف این هدف">
-                                                        <i className="fa-solid fa-trash text-xs"></i>
-                                                    </button>
-                                                </div>
-
-                                                {/* Weekly Trend Chart */}
-                                                <div className="h-[200px] w-full mt-2 mb-4" dir="ltr">
-                                                    <ResponsiveContainer width="100%" height="100%">
-                                                        <ComposedChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                            <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} tickFormatter={(val) => `هفته ${val}`} />
-                                                            <Tooltip 
-                                                                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', fontFamily: 'Vazirmatn', textAlign: 'right', fontSize: '11px'}}
-                                                                formatter={(val, name) => [formatNumber(val), name === 'هدف' ? 'تارگت' : 'عملکرد واقعی']}
-                                                                labelFormatter={(label) => `هفته ${label}`}
-                                                            />
-                                                            <Legend wrapperStyle={{fontSize: '10px', fontFamily: 'Vazirmatn'}} />
-                                                            <Bar dataKey="عملکرد" fill={isSuccess ? "#10b981" : "#818cf8"} radius={[4, 4, 0, 0]} maxBarSize={40} />
-                                                            <Line type="monotone" dataKey="هدف" stroke="#f59e0b" strokeWidth={2} dot={{r: 3, fill: "#f59e0b", strokeWidth: 0}} activeDot={{r: 5}} />
-                                                        </ComposedChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-
-                                                {/* Summary Stats */}
-                                                <div className="flex justify-between text-[11px] font-en font-semibold bg-slate-50 p-3 rounded-xl border border-slate-100 mt-auto mb-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-slate-400 mb-0.5 font-vazir">شروع (مبنا)</span>
-                                                        <span className="text-slate-600">{formatOkrValue(okr.baseline, okr.metricKey)}</span>
-                                                    </div>
-                                                    <div className="flex flex-col text-center">
-                                                        <span className="text-slate-400 mb-0.5 font-vazir" title={okr.targetType === 'weekly_average' ? 'میانگین عملکرد هفته‌های سپری شده' : 'مجموع عملکرد تاکنون'}>وضعیت فعلی</span>
-                                                        <span className={`text-sm ${isSuccess ? 'text-emerald-600 font-black' : 'text-indigo-600 font-bold'}`}>{formatOkrValue(metricCurrentVal, okr.metricKey)}</span>
-                                                    </div>
-                                                    <div className="flex flex-col text-left">
-                                                        <span className="text-slate-400 mb-0.5 font-vazir">تارگت نهایی</span>
-                                                        <span className="text-slate-800">{formatOkrValue(okr.target, okr.metricKey)}</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Review Button */}
-                                                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                                                    <div className="text-[10px] text-slate-500 font-bold flex items-center gap-1.5">
-                                                        <i className="fa-solid fa-list-check text-slate-400"></i>
-                                                        {actionsList.length === 0 ? 'بدون اکشن ثبت شده' : `${formatNumber(completedActions)} از ${formatNumber(actionsList.length)} اکشن انجام شده`}
-                                                    </div>
-                                                    <button onClick={() => setReviewOkrId(okr.id)} className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                                                        <i className="fa-solid fa-pen-to-square"></i> جلسه مرور و اکشن‌ها
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
+                                    currentSeasonOkrs.map(okr => (
+                                        <OkrCard 
+                                            key={okr.id} 
+                                            okr={okr} 
+                                            okrWeeksData={okrWeeksData} 
+                                            seasonNames={seasonNames} 
+                                            handleDeleteOkr={handleDeleteOkr} 
+                                            setReviewOkrId={setReviewOkrId} 
+                                        />
+                                    ))
                                 )}
                             </div>
                         </div>
